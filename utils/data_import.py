@@ -20,6 +20,12 @@ from utils.cleaners import (
     clean_author,
     clean_publisher,
     normalize_publication_date,
+    normalize_title,
+    normalize_publication_date_range,
+    normalize_summary_holdings,
+    normalize_field_590,
+    normalize_language,
+    normalize_e_overlap_interface,
     extract_first_value,
     parse_subjects,
 )
@@ -38,15 +44,18 @@ COLUMN_MAPPINGS = {
     'Barcode': ['barcode'],
     'Retention Note': ['retention_note', 'retention note', 'notes'],
     'Title': ['title'],
+    'Title (Normalized)': ['title_normalized', 'normalized_title'],
     'Author': ['author', 'creator', 'primary_author'],
     'Author (Contributor)': ['author_contributor', 'contributor', 'contributors', 'additional authors'],
     'Publisher': ['publisher'],
+    'Publication Place': ['publication_place', 'pub_place', 'place_published'],
     'Publication Date': ['publication_date', 'pub_date', 'date', 'year'],
+    'Begin Publication Date': ['begin_publication_date', 'begin date', 'start date'],
+    'End Publication Date': ['end_publication_date', 'end date', 'finish date'],
+    'Type of Date': ['type_of_date', 'date type', 'date_type'],
     'Edition': ['edition'],
     'Series': ['series'],
     'MMS Id': ['mms_id', 'mmsid', 'mms id'],
-    'Num of Loans Including Pre-Migration (In House + Not In House)': ['num_loans', 'loans', 'circulation', 'total_loans'],
-    'Num of Requests (Total)': ['num_requests', 'requests', 'total_requests'],
     'ISBN': ['isbn'],
     'ISBN (Normalized)': ['isbn_normalized', 'normalized_isbn'],
     'ISSN': ['issn'],
@@ -54,17 +63,23 @@ COLUMN_MAPPINGS = {
     'OCLC Control Number (035a)': ['oclc_control_number', 'oclc', 'oclc_number', '035a'],
     'OCLC Number': ['oclc_number_raw', 'oclc_raw'],
     'Subjects': ['subjects', 'subject', 'topic'],
-    'Creation Date': ['creation_date', 'created_date', 'date_created'],
+    'Summary Holdings': ['summary_holdings', 'holdings', 'coverage'],
+    '590': ['field_590', 'marc_590'],
+    'Num of Loans Including Pre-Migration (In House + Not In House)': ['num_loans', 'loans', 'circulation', 'total_loans'],
+    'Num of Loans (In House + Not In House)': ['num_loans_actual', 'actual_loans'],
+    'Num of Requests (Total)': ['num_requests', 'requests', 'total_requests'],
     'Last Loan Date': ['last_loan_date', 'last_circulation_date'],
+    'Creation Date': ['creation_date', 'created_date', 'date_created'],
+    'E-copy?': ['e_copy', 'ecopy'],
+    'E-overlap collection': ['e_overlap_collection', 'overlap_collection'],
+    'E-overlap interface': ['e_overlap_interface', 'interface_overlap'],
+    'Language': ['language', 'lang'],
     'Normalized Call Number': ['normalized_call_number', 'sort_call_number'],
     'Open Access': ['open_access', 'open access'],
-    'E-copy?': ['e_copy', 'ecopy'],
     'Electronic access type': ['electronic_access_type', 'access_type'],
-    'E-overlap collection': ['e_overlap_collection', 'overlap_collection'],
     'Has Committed To Retain': ['has_committed_to_retain', 'committed_to_retain', 'retain'],
     'OCLC Holdings': ['oclc_holdings', 'holdings', 'oclc holdings'],
     'PALCI Holdings': ['palci_holdings', 'palci'],
-    'Publication Place': ['publication_place', 'pub_place', 'place_published'],
     'Permanent LC Classification Top Line': ['lc_subclass', 'lc_top_line'],
 }
 
@@ -156,22 +171,38 @@ def clean_and_normalize_row(row: pd.Series) -> Dict[str, Any]:
     result['library_name'] = extract_first_value(get_val('Library Name', ''))
     result['location_name'] = extract_first_value(get_val('Location Name', ''))
     result['title'] = clean_title(get_val('Title', ''))
+    result['title_normalized'] = normalize_title(get_val('Title (Normalized)', '')) or normalize_title(get_val('Title', ''))
     result['author'] = clean_author(get_val('Author', ''))
     result['author_contributor'] = clean_author(get_val('Author (Contributor)', ''))
     result['publisher'] = clean_publisher(get_val('Publisher', ''))
     result['publication_place'] = get_val('Publication Place')
+    result['publication_date'] = get_val('Publication Date', '')
+    result['begin_publication_date'] = get_val('Begin Publication Date', '')
+    result['end_publication_date'] = get_val('End Publication Date', '')
+    result['type_of_date'] = get_val('Type of Date', '')
 
     # Item Policy and Serial/Monograph separation
     item_policy = get_val('Item Policy', '').strip().upper()
     result['item_policy'] = item_policy
     is_serial = item_policy in ['JOURNAL', 'SERIAL']
 
-    # Publication date
-    pub_date_raw = get_val('Publication Date', '')
-    pub_date_result = normalize_publication_date(pub_date_raw, is_serial=is_serial)
-    result['publication_date'] = pub_date_raw
-    result['publication_year_start'] = pub_date_result[0]
-    result['publication_year_end'] = pub_date_result[1]
+    # Publication date - use begin/end if provided, otherwise extract from publication_date
+    if result['begin_publication_date'] and result['end_publication_date']:
+        # Use explicitly provided begin/end dates
+        begin_result = normalize_publication_date(result['begin_publication_date'], is_serial=is_serial)
+        end_result = normalize_publication_date(result['end_publication_date'], is_serial=is_serial)
+        result['publication_year_start'] = begin_result[0] if begin_result[0] is not None else None
+        result['publication_year_end'] = end_result[1] if end_result[1] is not None else None
+        # Fallback to publication_date if begin/end parsing failed
+        if result['publication_year_start'] is None or result['publication_year_end'] is None:
+            pub_date_result = normalize_publication_date(result['publication_date'], is_serial=is_serial)
+            result['publication_year_start'] = pub_date_result[0]
+            result['publication_year_end'] = pub_date_result[1]
+    else:
+        # Extract from publication_date
+        pub_date_result = normalize_publication_date(result['publication_date'], is_serial=is_serial)
+        result['publication_year_start'] = pub_date_result[0]
+        result['publication_year_end'] = pub_date_result[1]
 
     result['edition'] = extract_first_value(get_val('Edition', ''))
     result['series'] = extract_first_value(get_val('Series', ''))
@@ -202,6 +233,12 @@ def clean_and_normalize_row(row: pd.Series) -> Dict[str, Any]:
     except (ValueError, TypeError):
         result['num_loans'] = 0
 
+    num_loans_actual_str = get_val('Num of Loans (In House + Not In House)', '0')
+    try:
+        result['num_loans_actual'] = int(float(num_loans_actual_str)) if num_loans_actual_str else 0
+    except (ValueError, TypeError):
+        result['num_loans_actual'] = 0
+
     num_requests_str = get_val('Num of Requests (Total)', '0')
     try:
         result['num_requests'] = int(float(num_requests_str)) if num_requests_str else 0
@@ -216,6 +253,7 @@ def clean_and_normalize_row(row: pd.Series) -> Dict[str, Any]:
     result['e_copy'] = str(e_copy_val).lower() in ['yes', 'true', '1', 'y']
     result['electronic_access_type'] = get_val('Electronic access type')
     result['e_overlap_collection'] = get_val('E-overlap collection')
+    result['e_overlap_interface'] = normalize_e_overlap_interface(get_val('E-overlap interface'))
 
     retain_val = get_val('Has Committed To Retain', '')
     result['has_committed_to_retain'] = str(retain_val).lower() in ['yes', 'true', '1', 'y']
@@ -227,6 +265,26 @@ def clean_and_normalize_row(row: pd.Series) -> Dict[str, Any]:
     # Subjects - store original for display, parse for faceting
     subjects_raw = get_val('Subjects', '')
     result['subjects'] = subjects_raw
+
+    # Summary Holdings - process for coverage calculation
+    summary_holdings_raw = get_val('Summary Holdings', '')
+    result['summary_holdings'] = summary_holdings_raw
+    # Also compute normalized begin/end years for coverage visualization
+    if summary_holdings_raw:
+        hold_begin, hold_end = normalize_summary_holdings(summary_holdings_raw)
+        result['summary_holdings_begin_year'] = hold_begin
+        result['summary_holdings_end_year'] = hold_end
+    else:
+        result['summary_holdings_begin_year'] = None
+        result['summary_holdings_end_year'] = None
+
+    # 590 field
+    field_590_raw = get_val('590', '')
+    result['field_590'] = normalize_field_590(field_590_raw)
+
+    # Language
+    language_raw = get_val('Language', '')
+    result['language'] = normalize_language(language_raw)
 
     # Holdings
     oclc_holdings_str = get_val('OCLC Holdings', '')

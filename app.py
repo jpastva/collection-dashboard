@@ -175,22 +175,9 @@ def render_data_upload():
 def render_main_dashboard(df: pd.DataFrame):
     """Render the main dashboard view."""
 
-    # Dashboard Type Selection
-    st.markdown("### Dashboard View")
-    dashboard_type = st.radio(
-        "Select Resource Group",
-        options=["All Resources", "Serials", "Monographs"],
-        horizontal=True,
-        index=0
-    )
-
-    # Filter data based on dashboard type
-    if dashboard_type == "Serials":
-        # Serials: Item Policy is JOURNAL or SERIAL
+    # Always treat as serials-only: filter to JOURNAL or SERIAL if item_policy exists
+    if 'item_policy' in df.columns:
         filtered_df = df[df['item_policy'].isin(['JOURNAL', 'SERIAL'])].copy()
-    elif dashboard_type == "Monographs":
-        # Monographs: Everything else
-        filtered_df = df[~df['item_policy'].isin(['JOURNAL', 'SERIAL'])].copy()
     else:
         filtered_df = df.copy()
 
@@ -229,7 +216,7 @@ def render_data_view_tab(df: pd.DataFrame):
     st.markdown("### Browse Collection")
 
     # Apply facet filters
-    filters = render_facet_panel(df)
+    filters = render_facet_panel(df, key_suffix="data")
     filtered_df = apply_filters_to_dataframe(df, filters)
 
     # Show filter results count
@@ -243,13 +230,7 @@ def render_data_view_tab(df: pd.DataFrame):
     st.divider()
 
     # Data table with selection
-    selected_idx = render_data_table(filtered_df)
-
-    # Show detail view if a record is selected
-    if selected_idx is not None and selected_idx < len(filtered_df):
-        record = filtered_df.iloc[selected_idx].to_dict()
-        st.divider()
-        render_detail_view(record)
+    render_data_table(filtered_df)
 
 
 def render_visualizations_tab(df: pd.DataFrame):
@@ -357,8 +338,16 @@ def render_reports_tab(df: pd.DataFrame):
     """Render the reports tab."""
     st.markdown("### Generate Reports")
 
+    # Apply facet filters (same as data view tab)
+    filters = render_facet_panel(df, key_suffix="reports")
+    filtered_df = apply_filters_to_dataframe(df, filters)
+
+    # Show filter results count for context
+    if filters:
+        st.caption(f"Showing reports for {len(filtered_df):,} filtered items (from {len(df):,} total)")
+
     # Report generator
-    report = render_report_menu(df)
+    report = render_report_menu(filtered_df)
 
     if report:
         st.divider()
@@ -546,6 +535,25 @@ def main():
                 st.session_state.data_df = pd.DataFrame()
                 st.session_state.import_stats = {}
                 st.session_state.active_filters = {}
+                # Also clear filter session state keys
+                filter_keys = [
+                    'filter_item_policy',
+                    'filter_material_type',
+                    'filter_lc_class',
+                    'filter_decade',
+                    'filter_usage',
+                    'filter_subjects',
+                    'filter_retain',
+                    'filter_access',
+                    'subject_search',
+                    'selected_record_idx',
+                    'custom_report_columns',
+                    'custom_report_sort_column',
+                    'custom_report_sort_ascending'
+                ]
+                for key in filter_keys:
+                    if key in st.session_state:
+                        del st.session_state[key]
                 st.rerun()
 
             if st.button("Refresh Data", width='stretch'):

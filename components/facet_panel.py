@@ -11,6 +11,7 @@ from utils.cleaners import parse_subjects
 
 def render_facet_panel(
     df: pd.DataFrame,
+    key_suffix: Optional[str] = None,
     session: Optional[Any] = None
 ) -> Dict[str, Any]:
     """
@@ -18,6 +19,7 @@ def render_facet_panel(
 
     Args:
         df: DataFrame with bibliographic records
+        key_suffix: Optional suffix to append to element keys to avoid duplicates
         session: Optional SQLAlchemy session for database-backed facets
 
     Returns:
@@ -29,7 +31,24 @@ def render_facet_panel(
         st.markdown("### Filters")
 
         # Clear filters button
-        if st.button("Clear All Filters", width='stretch'):
+        clear_button_key = f"clear_all_filters{key_suffix}" if key_suffix else "clear_all_filters"
+        if st.button("Clear All Filters", width='stretch', key=clear_button_key):
+            # Reset all filter-related session state keys (shared across tabs)
+            keys_to_clear = [
+                'filter_item_policy',
+                'filter_material_type',
+                'filter_lc_class',
+                'filter_decade',
+                'filter_usage',
+                'filter_subjects',
+                'filter_retain',
+                'filter_access',
+                'subject_search',
+            ]
+            for key in keys_to_clear:
+                if key in st.session_state:
+                    del st.session_state[key]
+            # Also reset the active_filters (though unused)
             st.session_state['active_filters'] = {}
             st.rerun()
 
@@ -40,11 +59,12 @@ def render_facet_panel(
         if 'item_policy' in df.columns:
             item_policies = df['item_policy'].dropna().unique()
             item_policies = [p for p in item_policies if p and str(p).strip()]
+            item_policy_widget_key = f"item_policy_filter{key_suffix}" if key_suffix else "item_policy_filter"
             item_policy_filter = st.multiselect(
                 "Select item policies",
                 options=sorted(item_policies),
                 default=st.session_state.get('filter_item_policy', []),
-                key="item_policy_filter"
+                key=item_policy_widget_key
             )
             if item_policy_filter:
                 filters['item_policy'] = item_policy_filter
@@ -56,11 +76,12 @@ def render_facet_panel(
         st.markdown("#### Material Type")
         material_types = df['material_type'].dropna().unique()
         material_types = [m for m in material_types if m and str(m).strip()]
+        material_type_widget_key = f"material_type_filter{key_suffix}" if key_suffix else "material_type_filter"
         material_type_filter = st.multiselect(
             "Select material types",
             options=sorted(material_types),
             default=st.session_state.get('filter_material_type', []),
-            key="material_type_filter"
+            key=material_type_widget_key
         )
         if material_type_filter:
             filters['material_type'] = material_type_filter
@@ -78,12 +99,13 @@ def render_facet_panel(
             from utils.call_number_parser import get_lc_class_description
             lc_options = {f"{c} - {get_lc_class_description(c)}": c for c in sorted(lc_classes)}
 
+            lc_widget_key = f"lc_class_filter{key_suffix}" if key_suffix else "lc_class_filter"
             lc_display = st.multiselect(
                 "Select LC classes",
                 options=list(lc_options.keys()),
                 format_func=lambda x: x,
                 default=[k for k, v in lc_options.items() if v in st.session_state.get('filter_lc_class', [])],
-                key="lc_class_filter"
+                key=lc_widget_key
             )
             lc_filter = [lc_options[d] for d in lc_display] if lc_display else []
             if lc_filter:
@@ -104,11 +126,12 @@ def render_facet_panel(
                 decades = list(range((min_year // 10) * 10, ((max_year // 10) + 1) * 10, 10))
                 decade_options = {f"{d}s": d for d in decades}
 
+                decade_widget_key = f"decade_filter{key_suffix}" if key_suffix else "decade_filter"
                 selected_decades = st.multiselect(
                     "Select decades",
                     options=list(decade_options.keys()),
                     default=[k for k, v in decade_options.items() if v // 10 in st.session_state.get('filter_decade', [])],
-                    key="decade_filter"
+                    key=decade_widget_key
                 )
 
                 if selected_decades:
@@ -131,11 +154,12 @@ def render_facet_panel(
             'Very High (100+)': (101, float('inf')),
         }
 
+        usage_widget_key = f"usage_filter{key_suffix}" if key_suffix else "usage_filter"
         selected_usage = st.multiselect(
             "Select usage levels",
             options=list(usage_options.keys()),
             default=[k for k, v in usage_options.items() if v in st.session_state.get('filter_usage', [])],
-            key="usage_filter"
+            key=usage_widget_key
         )
 
         if selected_usage:
@@ -159,18 +183,20 @@ def render_facet_panel(
             sorted_subjects = sorted(all_subjects.items(), key=lambda x: -x[1])
 
             # Show top subjects with search
-            subject_search = st.text_input("Search subjects", key="subject_search")
+            subject_search_widget_key = f"subject_search{key_suffix}" if key_suffix else "subject_search"
+            subject_search = st.text_input("Search subjects", key=subject_search_widget_key)
 
             if subject_search:
                 filtered_subjects = [s for s, _ in sorted_subjects if subject_search.lower() in s.lower()][:50]
             else:
                 filtered_subjects = [s for s, _ in sorted_subjects[:50]]
 
+            subject_filter_widget_key = f"subject_filter{key_suffix}" if key_suffix else "subject_filter"
             subject_filter = st.multiselect(
                 "Select subjects",
                 options=sorted(filtered_subjects),
                 default=st.session_state.get('filter_subjects', []),
-                key="subject_filter"
+                key=subject_filter_widget_key
             )
 
             if subject_filter:
@@ -181,11 +207,12 @@ def render_facet_panel(
 
         # Retention status filter
         st.markdown("#### Retention Status")
+        retain_widget_key = f"retain_filter{key_suffix}" if key_suffix else "retain_filter"
         retain_filter = st.radio(
             "Committed to Retain",
             options=["All", "Yes", "No"],
             index=0,
-            key="retain_filter"
+            key=retain_widget_key
         )
 
         if retain_filter != "All":
@@ -196,11 +223,12 @@ def render_facet_panel(
 
         # Open Access filter
         st.markdown("#### Access Status")
+        access_widget_key = f"access_filter{key_suffix}" if key_suffix else "access_filter"
         access_filter = st.radio(
             "Open Access",
             options=["All", "Yes", "No"],
             index=0,
-            key="access_filter"
+            key=access_widget_key
         )
 
         if access_filter != "All":

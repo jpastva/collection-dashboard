@@ -20,6 +20,10 @@ def render_report_menu(df: pd.DataFrame) -> Optional[Dict[str, Any]]:
     """
     st.markdown("### Report Generator")
 
+    # Initialize session state for report type if not exists
+    if 'report_type' not in st.session_state:
+        st.session_state.report_type = "Collection Summary Report"
+
     # Report type selection
     report_type = st.selectbox(
         "Select Report Type",
@@ -30,8 +34,14 @@ def render_report_menu(df: pd.DataFrame) -> Optional[Dict[str, Any]]:
             "Retention Status Report",
             "Publication Age Report",
             "Custom Report",
-        ]
+        ],
+        index=["Collection Summary Report", "Usage Analysis Report", "Subject Coverage Report",
+               "Retention Status Report", "Publication Age Report", "Custom Report"].index(st.session_state.report_type)
     )
+
+    # Update session state when report type changes
+    if report_type != st.session_state.report_type:
+        st.session_state.report_type = report_type
 
     # Report options
     st.markdown("#### Report Options")
@@ -63,10 +73,10 @@ def render_report_menu(df: pd.DataFrame) -> Optional[Dict[str, Any]]:
         )
 
     # Generate report button
-    if st.button("Generate Report", type="primary", width='stretch'):
+    if st.button("Generate Report", type="primary", width='stretch', key="generate_report_button"):
         report_data = generate_report(
             df=df,
-            report_type=report_type,
+            report_type=st.session_state.report_type,
             year_range=year_range,
             material_filter=material_filter
         )
@@ -455,6 +465,14 @@ def generate_age_report(df: pd.DataFrame) -> Dict[str, Any]:
 def generate_custom_report(df: pd.DataFrame) -> Dict[str, Any]:
     """Generate a custom report with user-selected fields."""
 
+    # Initialize session state for custom report if not exists
+    if 'custom_report_columns' not in st.session_state:
+        st.session_state.custom_report_columns = []
+    if 'custom_report_sort_column' not in st.session_state:
+        st.session_state.custom_report_sort_column = ''
+    if 'custom_report_sort_ascending' not in st.session_state:
+        st.session_state.custom_report_sort_ascending = True
+
     report = {
         'title': 'Custom Report',
         'generated_at': datetime.now().isoformat(),
@@ -473,31 +491,62 @@ def generate_custom_report(df: pd.DataFrame) -> Dict[str, Any]:
     # Filter to available columns
     available = [col for col in available_columns if col in df.columns]
 
+    # If no columns previously selected, default to first 5
+    if not st.session_state.custom_report_columns and available:
+        st.session_state.custom_report_columns = available[:5]
+
     selected_columns = st.multiselect(
         "Select columns to include",
         options=available,
-        default=available[:5] if available else []
+        default=st.session_state.custom_report_columns,
+        key="custom_report_columns_select"
     )
+
+    # Update session state when columns change
+    if selected_columns != st.session_state.custom_report_columns:
+        st.session_state.custom_report_columns = selected_columns
+        # Reset sort column if it's not in the new selection
+        if st.session_state.custom_report_sort_column not in selected_columns:
+            st.session_state.custom_report_sort_column = ''
 
     if selected_columns:
         # Sort options
+        sort_column_options = [''] + selected_columns
+        # Ensure current sort column is in options
+        if st.session_state.custom_report_sort_column not in sort_column_options:
+            st.session_state.custom_report_sort_column = ''
+
         sort_column = st.selectbox(
             "Sort by",
-            options=[''] + selected_columns
+            options=sort_column_options,
+            index=sort_column_options.index(st.session_state.custom_report_sort_column) if st.session_state.custom_report_sort_column in sort_column_options else 0,
+            key="custom_report_sort_select"
         )
+
+        # Update session state when sort column changes
+        if sort_column != st.session_state.custom_report_sort_column:
+            st.session_state.custom_report_sort_column = sort_column
 
         sort_ascending = st.radio(
             "Sort order",
-            options=['Ascending', 'Descending']
+            options=['Ascending', 'Descending'],
+            index=0 if st.session_state.custom_report_sort_ascending else 1,
+            key="custom_report_sort_order_radio"
         )
 
-        if st.button("Generate Custom Report"):
+        # Update session state when sort order changes
+        if sort_ascending == 'Ascending':
+            st.session_state.custom_report_sort_ascending = True
+        else:
+            st.session_state.custom_report_sort_ascending = False
+
+        if st.button("Generate Custom Report", key="generate_custom_report_button"):
             custom_df = df[selected_columns].copy()
 
             if sort_column and sort_column in custom_df.columns:
                 custom_df = custom_df.sort_values(
                     sort_column,
-                    ascending=(sort_ascending == 'Ascending')
+                    ascending=st.session_state.custom_report_sort_ascending
                 )
 
             report['sections'].append({
@@ -507,6 +556,20 @@ def generate_custom_report(df: pd.DataFrame) -> Dict[str, Any]:
             })
 
             report['selected_columns'] = selected_columns
+        else:
+            # Show a message prompting the user to click the button
+            report['sections'].append({
+                'name': 'Custom Data',
+                'type': 'info',
+                'data': {'message': 'Please select columns and click the "Generate Custom Report" button to generate the report.'}
+            })
+    else:
+        # Show message when no columns selected
+        report['sections'].append({
+            'name': 'Custom Data',
+            'type': 'info',
+            'data': {'message': 'Please select at least one column to include in the report.'}
+        })
 
     return report
 
@@ -546,5 +609,10 @@ def render_report_display(report: Dict[str, Any]) -> None:
                 st.dataframe(data, width='stretch')
             else:
                 st.info("No data for this section.")
+        elif section.get('type') == 'info':
+            # Display info message
+            data = section.get('data', {})
+            message = data.get('message', 'No information available.')
+            st.info(message)
 
         st.divider()

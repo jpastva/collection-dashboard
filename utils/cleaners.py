@@ -460,3 +460,225 @@ def normalize_call_number(call_number: str, call_number_type: str) -> dict:
 
     # Further parsing is handled by pycallnumber in the call_number_parser module
     return result
+
+
+def normalize_title(title: str) -> Optional[str]:
+    """
+    Normalize title for sorting and matching.
+    Similar to clean_title but focused on normalization for comparison.
+
+    Args:
+        title: Raw title string
+
+    Returns:
+        Normalized title string, or None if invalid
+    """
+    if not title or not isinstance(title, str):
+        return None
+
+    # Strip whitespace
+    title = title.strip()
+
+    if not title:
+        return None
+
+    # Convert to lowercase for normalization
+    title = title.lower()
+
+    # Remove punctuation
+    title = re.sub(r'[^\w\s]', '', title)
+
+    # Normalize multiple spaces to single space
+    title = re.sub(r'\s+', ' ', title)
+
+    # Remove leading/trailing spaces
+    title = title.strip()
+
+    # Remove leading articles
+    title = re.sub(r'^(a|an|the)\s+', '', title)
+
+    return title if title else None
+
+
+def normalize_publication_date_range(date_str: str) -> Tuple[Optional[int], Optional[int]]:
+    """
+    Normalize publication date to extract begin and end years.
+    Handles various date formats including ranges.
+
+    Args:
+        date_str: Raw publication date string
+
+    Returns:
+        Tuple of (begin_year, end_year)
+    """
+    if not date_str or not isinstance(date_str, str):
+        return (None, None)
+
+    # Strip whitespace
+    date_str = date_str.strip()
+    if not date_str:
+        return (None, None)
+
+    # Use existing normalize_publication_date function which already handles ranges
+    start_year, end_year, _ = normalize_publication_date(date_str, is_serial=True)
+    return (start_year, end_year)
+
+
+def normalize_summary_holdings(holdings: str) -> Tuple[Optional[int], Optional[int]]:
+    """
+    Normalize summary holdings to extract date span of held issues.
+    Based on guidelines from https://journal.code4lib.org/articles/17839
+
+    Args:
+        holdings: Raw summary holdings string (e.g., "1990-2020", "v.1:v.10", etc.)
+
+    Returns:
+        Tuple of (begin_year, end_year) of held coverage, or None if invalid
+    """
+    if not holdings or not isinstance(holdings, str):
+        return (None, None)
+
+    # Strip whitespace
+    holdings = holdings.strip()
+    if not holdings:
+        return (None, None)
+
+    # Convert to uppercase for consistent processing
+    holdings_upper = holdings.upper()
+
+    # Look for year patterns (4-digit years)
+    year_matches = re.findall(r'\b\d{4}\b', holdings_upper)
+
+    if not year_matches:
+        # If no 4-digit years found, try to extract volume/issue information
+        # This is a simplified approach - in reality, this would need more complex parsing
+        # to map volumes to years based on publication patterns
+        return (None, None)
+
+    # Extract years and convert to integers
+    years = [int(year) for year in year_matches]
+
+    if len(years) >= 2:
+        # Range format like "1990-2020" or list like "1990, 1991, 1992"
+        return (min(years), max(years))
+    elif len(years) == 1:
+        # Single year
+        return (years[0], years[0])
+    else:
+        return (None, None)
+
+
+def normalize_field_590(field_590: str) -> Optional[str]:
+    """
+    Normalize MARC 590 field (Local notes).
+    Extracts useful information for serials tracking.
+
+    Args:
+        field_590: Raw MARC 590 field string
+
+    Returns:
+        Cleaned and normalized string, or None if invalid
+    """
+    if not field_590 or not isinstance(field_590, str):
+        return None
+
+    # Strip whitespace
+    field_590 = field_590.strip()
+    if not field_590:
+        return None
+
+    # Remove common prefixes that don't add value
+    field_590 = re.sub(r'^590\s*\\\\\\$a\s*', '', field_590, flags=re.IGNORECASE)
+    field_590 = re.sub(r'^590\s*', '', field_590, flags=re.IGNORECASE)
+
+    # Normalize multiple spaces
+    field_590 = re.sub(r'\s+', ' ', field_590)
+
+    # Remove leading/trailing spaces
+    field_590 = field_590.strip()
+
+    return field_590 if field_590 else None
+
+
+def normalize_language(language: str) -> Optional[str]:
+    """
+    Normalize language code or name.
+    Converts to standard 3-letter ISO 639-2/B or 2-letter ISO 639-1 codes where possible.
+
+    Args:
+        language: Raw language string
+
+    Returns:
+        Normalized language string, or None if invalid
+    """
+    if not language or not isinstance(language, str):
+        return None
+
+    # Strip whitespace
+    language = language.strip()
+    if not language:
+        return None
+
+    # Convert to lowercase for normalization
+    language = language.lower()
+
+    # Remove extra characters
+    language = re.sub(r'[^a-z\-]', '', language)
+
+    # Handle common language names (simplified mapping)
+    language_map = {
+        'english': 'eng',
+        'spanish': 'spa',
+        'french': 'fre',
+        'german': 'ger',
+        'italian': 'ita',
+        'portuguese': 'por',
+        'russian': 'rus',
+        'chinese': 'chi',
+        'japanese': 'jpn',
+        'korean': 'kor',
+        'arabic': 'ara',
+    }
+
+    # Check if it's a known language name
+    if language in language_map:
+        return language_map[language]
+
+    # If it's already a code-like format (2-3 letters), return as-is
+    if re.match(r'^[a-z]{2,3}$', language):
+        return language
+
+    # Otherwise, return the cleaned version
+    return language if language else None
+
+
+def normalize_e_overlap_interface(interface: str) -> Optional[str]:
+    """
+    Normalize E-overlap interface field.
+    Cleans up interface descriptions for electronic serials overlap.
+
+    Args:
+        interface: Raw e-overlap interface string
+
+    Returns:
+        Normalized interface string, or None if invalid
+    """
+    if not interface or not isinstance(interface, str):
+        return None
+
+    # Strip whitespace
+    interface = interface.strip()
+    if not interface:
+        return None
+
+    # Remove common prefixes
+    interface = re.sub(r'^E-OVERLAP\s+INTERFACE\s*:?\s*', '', interface, flags=re.IGNORECASE)
+    interface = re.sub(r'^INTERFACE\s*:?\s*', '', interface, flags=re.IGNORECASE)
+
+    # Normalize multiple spaces
+    interface = re.sub(r'\s+', ' ', interface)
+
+    # Remove leading/trailing spaces
+    interface = interface.strip()
+
+    return interface if interface else None
