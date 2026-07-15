@@ -13,15 +13,14 @@ import sys
 # Add the project root to the path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from models.database import init_db, get_session_direct
-from utils.data_import import import_file, get_records_as_dataframe, apply_filters
+from models.database import init_db
+from utils.data_import import process_dataframe
 from components.visualizations import (
     create_usage_chart,
     create_age_distribution_chart,
     create_subject_coverage_chart,
     create_lc_class_coverage_chart,
     create_oclc_holdings_chart,
-    create_material_type_chart,
     create_publication_timeline_chart,
     create_summary_cards,
 )
@@ -30,74 +29,20 @@ from components.facet_panel import render_facet_panel, apply_filters_to_datafram
 from components.export import export_to_csv, export_to_excel, create_summary_report, export_report_to_excel
 from components.reports import render_report_menu, generate_report, render_report_display
 
-# Page configuration
-st.set_page_config(
-    page_title="Library Dashboard",
-    page_icon="📚",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
 
-# Custom CSS for Green Glass-inspired theme
-st.markdown("""
-<style>
-    /* Main theme colors - Rose, Teal, Orange, Gold palette */
-    :root {
-        --primary-rose: #B4436C;
-        --secondary-teal: #4D9078;
-        --accent-orange: #F78154;
-        --accent-gold: #F2C14E;
-        --highlight: #FEF9E7;
-        --text-dark: #1F2937;
-        --text-light: #4B5563;
-    }
-
-    /* Header styling */
-    .stApp > header {
-        background-color: var(--primary-rose);
-    }
-
-    /* Sidebar styling */
-    section[data-testid="stSidebar"] {
-        background-color: var(--highlight);
-    }
-
-    /* Metric cards */
-    div[data-testid="stMetricValue"] {
-        color: var(--primary-rose);
-    }
-
-    /* Button styling */
-    .stButton > button {
-        background-color: var(--secondary-teal);
-        color: white;
-        border: none;
-        border-radius: 4px;
-    }
-    .stButton > button:hover {
-        background-color: var(--primary-rose);
-    }
-
-    /* Tabs styling */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-    }
-    .stTabs [data-baseweb="tab"] {
-        background-color: var(--accent-gold);
-        color: var(--text-dark);
-        font-weight: 600;
-        border-radius: 4px;
-    }
-    .stTabs [aria-selected="true"] {
-        background-color: var(--primary-rose);
-        color: white;
-    }
-
-    /* Hide default footer */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-</style>
-""", unsafe_allow_html=True)
+def load_data_from_google_sheet():
+    """Load data from the public Google Sheet."""
+    url = "https://docs.google.com/spreadsheets/d/1P6ysv95IrKsAbF8m8LIJ8wawCcOQK67x/export?format=csv"
+    try:
+        with st.spinner("Loading data from Google Sheet..."):
+            # Read the CSV data, ensuring all columns are read as strings to avoid type issues
+            raw_df = pd.read_csv(url, dtype=str)
+        # Process the data using the same function used for file uploads
+        processed_df, _ = process_dataframe(raw_df)
+        return processed_df
+    except Exception as e:
+        st.error(f"Failed to load data from Google Sheet: {e}")
+        return pd.DataFrame()
 
 
 def initialize_session_state():
@@ -126,67 +71,75 @@ def render_header():
     st.divider()
 
 
-def render_data_upload():
-    """Render the data upload section."""
-    st.markdown("### Import Data")
-
-    uploaded_file = st.file_uploader(
-        "Upload a CSV or Excel file containing bibliographic records",
-        type=['csv', 'xlsx', 'xlsm', 'xls'],
-        help="Files should contain columns like: Library Name, Location Name, Title, Author, Publisher, Publication Date, ISBN, ISSN, OCLC Control Number, etc."
-    )
-
-    if uploaded_file is not None:
-        # Save to temporary location
-        temp_path = os.path.join("data", "temp_import" + os.path.splitext(uploaded_file.name)[1])
-        os.makedirs("data", exist_ok=True)
-
-        with open(temp_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-
-        # Process the file
-        with st.spinner("Processing data..."):
-            session = get_session_direct()
-            try:
-                result = import_file(temp_path, session)
-                session.close()
-
-                if result['success']:
-                    st.session_state.data_loaded = True
-                    st.session_state.import_stats = result
-                    st.success(f"Successfully imported {result['records_imported']} records!")
-
-                    # Load data into session state
-                    st.session_state.data_df = get_records_as_dataframe(get_session_direct())
-
-                    # Clean up temp file
-                    if os.path.exists(temp_path):
-                        os.remove(temp_path)
-
-                    st.rerun()
-                else:
-                    st.error(f"Import failed: {result.get('error', 'Unknown error')}")
-            except Exception as e:
-                st.error(f"Import error: {str(e)}")
-            finally:
-                session.close()
-
-
 def render_main_dashboard(df: pd.DataFrame):
     """Render the main dashboard view."""
+    # Sidebar: data management and filters
+    with st.sidebar:
+        st.markdown("### Data Management")
+        st.metric("Total Records", len(df))
 
-    # Always treat as serials-only: filter to JOURNAL or SERIAL if item_policy exists
-    if 'item_policy' in df.columns:
-        filtered_df = df[df['item_policy'].isin(['JOURNAL', 'SERIAL'])].copy()
-    else:
-        filtered_df = df.copy()
+        if st.button("Refresh Data from Google Sheet", width='stretch'):
+            df_refresh = load_data_from_google_sheet()
+            if not df_refresh.empty:
+                st.session_state.data_df = df_refresh
+                st.success("Data refreshed successfully!")
+                st.rerun()
+            else:
+                st.error("Failed to refresh data.")
 
-    # Summary cards
-    render_summary_cards(filtered_df)
+        if st.button("Clear Data & Start Over", width='stretch'):
+            st.session_state.data_loaded = False
+            st.session_state.data_df = pd.DataFrame()
+            st.session_state.import_stats = {}
+            st.session_state.active_filters = {}
+            # Also clear filter session state keys
+            filter_keys = [
+                'filter_item_policy',
+                'filter_material_type',
+                'filter_lc_class',
+                'filter_decade',
+                'filter_usage',
+                'filter_subjects',
+                'filter_retain',
+                'filter_access',
+                'subject_search',
+                'selected_record_idx',
+                'custom_report_columns',
+                'custom_report_sort_column',
+                'custom_report_sort_ascending',
+                'filter_item_id',
+                'filter_decision',
+                'filter_selector',
+                'filter_notes',
+                'filter_oclc_holdings',
+                'filter_palci_holdings',
+                'filter_ecopy',
+                'filter_hathitrust'
+            ]
+            for key in filter_keys:
+                if key in st.session_state:
+                    del st.session_state[key]
+            st.rerun()
 
+        st.divider()
+
+        # Show import stats (if any)
+        if st.session_state.import_stats:
+            stats = st.session_state.import_stats
+            st.markdown("#### Import Statistics")
+            st.info(f"Records loaded: {stats.get('records_imported', 0)}")
+
+        st.divider()
+        st.markdown("### Filters")
+        # Render facet panel in sidebar
+        filters = render_facet_panel(df, key_suffix="sidebar")
+        filtered_df = apply_filters_to_dataframe(df, filters)
+
+    # Summary cards (show overall statistics, unfiltered)
     st.divider()
+    render_summary_cards(df)
 
-    # Main tabs
+    # Main area: tabs
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📊 Data View",
         "📈 Visualizations",
@@ -196,36 +149,32 @@ def render_main_dashboard(df: pd.DataFrame):
     ])
 
     with tab1:
-        render_data_view_tab(filtered_df)
+        render_data_view_tab(df, filtered_df)
 
     with tab2:
-        render_visualizations_tab(filtered_df)
+        render_visualizations_tab(df, filtered_df)
 
     with tab3:
-        render_reports_tab(filtered_df)
+        render_reports_tab(df, filtered_df)
 
     with tab4:
-        render_export_tab(filtered_df)
+        render_export_tab(df, filtered_df)
 
     with tab5:
         render_about_tab()
 
 
-def render_data_view_tab(df: pd.DataFrame):
+def render_data_view_tab(df: pd.DataFrame, filtered_df: pd.DataFrame):
     """Render the data view tab."""
     st.markdown("### Browse Collection")
-
-    # Apply facet filters
-    filters = render_facet_panel(df, key_suffix="data")
-    filtered_df = apply_filters_to_dataframe(df, filters)
 
     # Show filter results count
     col1, col2 = st.columns([3, 1])
     with col1:
         st.markdown(f"Showing **{len(filtered_df):,}** of **{len(df):,}** items")
     with col2:
-        if filters:
-            st.info(f"{len(filters)} filters active")
+        # We could compute active filters count, but we already have it in facet panel; skip for now
+        pass
 
     st.divider()
 
@@ -233,7 +182,7 @@ def render_data_view_tab(df: pd.DataFrame):
     render_data_table(filtered_df)
 
 
-def render_visualizations_tab(df: pd.DataFrame):
+def render_visualizations_tab(df: pd.DataFrame, filtered_df: pd.DataFrame):
     """Render the visualizations tab."""
     st.markdown("### Data Visualizations")
 
@@ -245,7 +194,6 @@ def render_visualizations_tab(df: pd.DataFrame):
             "Material Age Distribution",
             "Subject Coverage",
             "LC Classification Coverage",
-            "Material Type Distribution",
             "Publication Timeline",
             "OCLC Holdings",
             "Request Usage",
@@ -260,101 +208,86 @@ def render_visualizations_tab(df: pd.DataFrame):
 
     # Render selected chart
     if chart_type == "Circulation Usage":
-        fig = create_usage_chart(df)
+        fig = create_usage_chart(filtered_df)
         st.plotly_chart(fig, width='stretch')
 
     elif chart_type == "Material Age Distribution":
-        fig = create_age_distribution_chart(df)
+        fig = create_age_distribution_chart(filtered_df)
         st.plotly_chart(fig, width='stretch')
 
     elif chart_type == "Subject Coverage":
-        fig = create_subject_coverage_chart(df)
+        fig = create_subject_coverage_chart(filtered_df)
         st.plotly_chart(fig, width='stretch')
 
     elif chart_type == "LC Classification Coverage":
-        fig = create_lc_class_coverage_chart(df)
-        st.plotly_chart(fig, width='stretch')
-
-    elif chart_type == "Material Type Distribution":
-        fig = create_material_type_chart(df)
+        fig = create_lc_class_coverage_chart(filtered_df)
         st.plotly_chart(fig, width='stretch')
 
     elif chart_type == "Publication Timeline":
-        fig = create_publication_timeline_chart(df)
+        fig = create_publication_timeline_chart(filtered_df)
         st.plotly_chart(fig, width='stretch')
 
     elif chart_type == "OCLC Holdings":
-        fig = create_oclc_holdings_chart(df)
+        fig = create_oclc_holdings_chart(filtered_df)
         st.plotly_chart(fig, width='stretch')
 
     elif chart_type == "Request Usage":
         from components.visualizations import create_requests_chart
-        fig = create_requests_chart(df)
+        fig = create_requests_chart(filtered_df)
         st.plotly_chart(fig, width='stretch')
 
     elif chart_type == "PALCI Holdings":
         from components.visualizations import create_palci_holdings_chart
-        fig = create_palci_holdings_chart(df)
+        fig = create_palci_holdings_chart(filtered_df)
         st.plotly_chart(fig, width='stretch')
 
     elif chart_type == "Last Loan Date":
         from components.visualizations import create_last_loan_date_chart
-        fig = create_last_loan_date_chart(df)
+        fig = create_last_loan_date_chart(filtered_df)
         st.plotly_chart(fig, width='stretch')
 
     elif chart_type == "LC Subclass Coverage":
         from components.visualizations import create_lc_subclass_chart
-        fig = create_lc_subclass_chart(df)
+        fig = create_lc_subclass_chart(filtered_df)
         st.plotly_chart(fig, width='stretch')
 
     elif chart_type == "E-Copy Availability":
         from components.visualizations import create_ecopy_chart
-        fig = create_ecopy_chart(df)
+        fig = create_ecopy_chart(filtered_df)
         st.plotly_chart(fig, width='stretch')
 
     # Show all charts option
     st.divider()
     if st.checkbox("Show All Visualizations"):
         st.markdown("#### Circulation Usage")
-        st.plotly_chart(create_usage_chart(df), width='stretch', key='viz_usage_all')
+        st.plotly_chart(create_usage_chart(filtered_df), width='stretch', key='viz_usage_all')
 
         st.markdown("#### Material Age Distribution")
-        st.plotly_chart(create_age_distribution_chart(df), width='stretch', key='viz_age_all')
+        st.plotly_chart(create_age_distribution_chart(filtered_df), width='stretch', key='viz_age_all')
 
         st.markdown("#### Subject Coverage")
-        st.plotly_chart(create_subject_coverage_chart(df), width='stretch', key='viz_subject_all')
+        st.plotly_chart(create_subject_coverage_chart(filtered_df), width='stretch', key='viz_subject_all')
 
         st.markdown("#### LC Classification Coverage")
-        st.plotly_chart(create_lc_class_coverage_chart(df), width='stretch', key='viz_lc_all')
-
-        st.markdown("#### Material Type Distribution")
-        st.plotly_chart(create_material_type_chart(df), width='stretch', key='viz_material_all')
+        st.plotly_chart(create_lc_class_coverage_chart(filtered_df), width='stretch', key='viz_lc_all')
 
         st.markdown("#### Publication Timeline")
-        st.plotly_chart(create_publication_timeline_chart(df), width='stretch', key='viz_timeline_all')
+        st.plotly_chart(create_publication_timeline_chart(filtered_df), width='stretch', key='viz_timeline_all')
 
 
-def render_reports_tab(df: pd.DataFrame):
+def render_reports_tab(df: pd.DataFrame, filtered_df: pd.DataFrame):
     """Render the reports tab."""
     st.markdown("### Generate Reports")
 
-    # Apply facet filters (same as data view tab)
-    filters = render_facet_panel(df, key_suffix="reports")
-    filtered_df = apply_filters_to_dataframe(df, filters)
-
-    # Show filter results count for context
-    if filters:
-        st.caption(f"Showing reports for {len(filtered_df):,} filtered items (from {len(df):,} total)")
-
     # Report generator
-    report = render_report_menu(filtered_df)
+    report = render_report_menu(filtered_df)  # Pass filtered_df to report menu
 
     if report:
         st.divider()
         render_report_display(report)
 
 
-def render_export_tab(df: pd.DataFrame):
+def render_export_tab(df: pd.DataFrame, filtered_df: pd.DataFrame):
     """Render the export tab."""
     st.markdown("### Export Data")
 
@@ -372,13 +305,13 @@ def render_export_tab(df: pd.DataFrame):
 
         # Column selection
         available_columns = [
-            'title', 'author', 'publisher', 'publication_date',
-            'material_type', 'permanent_call_number', 'call_number_class',
-            'num_loans', 'isbn_normalized', 'issn_normalized', 'oclc_control_number',
-            'mms_id', 'barcode', 'subjects', 'has_committed_to_retain',
-            'open_access', 'library_name', 'location_name',
+            'Title', 'Author', 'Publisher', 'Publication Date',
+            'Material Type', 'Permanent Call Number', 'call_number_classification',
+            'Num of Loans Including Pre-Migration (In House + Not In House)', 'ISBN (Normalized)', 'ISSN (Normalized)', 'OCLC Control Number (035a)',
+            'MMS Id', 'Barcode', 'Subjects', 'Has Committed To Retain',
+            'Open Access', 'Library Name', 'Location Name'
         ]
-        available = [col for col in available_columns if col in df.columns]
+        available = [col for col in available_columns if col in filtered_df.columns]
 
         selected_columns = st.multiselect(
             "Select columns to export",
@@ -388,7 +321,7 @@ def render_export_tab(df: pd.DataFrame):
 
     with col2:
         st.markdown("#### Export Summary")
-        st.metric("Records to export", len(df))
+        st.metric("Records to export", len(filtered_df))
         if selected_columns:
             st.metric("Columns", len(selected_columns))
 
@@ -397,9 +330,9 @@ def render_export_tab(df: pd.DataFrame):
     # Generate export
     if st.button("Download Export", type="primary", width='stretch'):
         if selected_columns:
-            export_df = df[selected_columns]
+            export_df = filtered_df[selected_columns]
         else:
-            export_df = df
+            export_df = filtered_df
 
         if export_format == "CSV":
             csv_data = export_to_csv(export_df)
@@ -425,8 +358,8 @@ def render_export_tab(df: pd.DataFrame):
     st.markdown("#### Export Summary Report")
 
     if st.button("Generate & Download Summary Report"):
-        report_data = create_summary_report(df)
-        excel_data = export_report_to_excel(df, report_data)
+        report_data = create_summary_report(filtered_df)
+        excel_data = export_report_to_excel(filtered_df, report_data)
         st.download_button(
             label="Download Summary Report (Excel)",
             data=excel_data,
@@ -446,7 +379,7 @@ def render_about_tab():
 
     #### Features
 
-    - **Data Import**: Upload CSV or Excel files containing bibliographic records
+    - **Data Import**: Load data directly from a public Google Sheet
     - **Data Cleaning**: Automatic normalization of:
       - OCLC Control Numbers (removing prefixes and leading zeros)
       - ISBN, ISSN, Barcode, and MMS ID normalization
@@ -475,7 +408,7 @@ def render_about_tab():
 
     Built with Python and Streamlit, using:
     - **pandas** for data processing
-    - **SQLAlchemy** for data storage
+    - **SQLAlchemy** for data storage (though currently loading directly from Google Sheet)
     - **Plotly** for interactive visualizations
     - **pycallnumber** for call number parsing
 
@@ -490,89 +423,28 @@ def render_about_tab():
 def main():
     """Main application entry point."""
     initialize_session_state()
+    init_db()  # Initialize database (though not used for data loading in this version)
     render_header()
 
-    # Initialize database
-    init_db()
-
     if not st.session_state.data_loaded:
-        # Show upload screen
-        render_data_upload()
-
-        # Show sample data info
-        st.divider()
-        st.markdown("### Getting Started")
+        # Show loading screen
+        st.markdown("### Loading Data from Google Sheet")
         st.markdown("""
-        To begin using Library Dashboard:
-
-        1. **Prepare your data**: Ensure your CSV or Excel file contains bibliographic records
-           with columns such as Title, Author, Publisher, Publication Date, ISBN, etc.
-
-        2. **Upload your file**: Use the file uploader above to import your data.
-
-        3. **Explore your collection**: Once imported, you can:
-           - Browse items in the Data View tab
-           - Filter by material type, LC class, subject, and more
-           - View visualizations of your collection
-           - Generate custom reports
-           - Export cleaned data
-
-        The application will automatically clean and normalize your data during import,
-        including OCLC numbers, ISBNs, call numbers, and more.
+        The Library Dashboard loads data directly from a public Google Sheet.
+        Click the button below to load the latest data.
         """)
+        if st.button("Load Data from Google Sheet", type="primary"):
+            df = load_data_from_google_sheet()
+            if not df.empty:
+                st.session_state.data_loaded = True
+                st.session_state.data_df = df
+                st.success(f"Successfully loaded {len(df)} records from Google Sheet!")
+                st.rerun()
+            else:
+                st.error("Failed to load data. Please check the connection and try again.")
     else:
         # Show main dashboard
         df = st.session_state.data_df
-
-        # Data management in sidebar
-        with st.sidebar:
-            st.markdown("### Data Management")
-
-            st.metric("Total Records", len(df))
-
-            if st.button("Clear Data & Start Over", width='stretch'):
-                st.session_state.data_loaded = False
-                st.session_state.data_df = pd.DataFrame()
-                st.session_state.import_stats = {}
-                st.session_state.active_filters = {}
-                # Also clear filter session state keys
-                filter_keys = [
-                    'filter_item_policy',
-                    'filter_material_type',
-                    'filter_lc_class',
-                    'filter_decade',
-                    'filter_usage',
-                    'filter_subjects',
-                    'filter_retain',
-                    'filter_access',
-                    'subject_search',
-                    'selected_record_idx',
-                    'custom_report_columns',
-                    'custom_report_sort_column',
-                    'custom_report_sort_ascending'
-                ]
-                for key in filter_keys:
-                    if key in st.session_state:
-                        del st.session_state[key]
-                st.rerun()
-
-            if st.button("Refresh Data", width='stretch'):
-                st.session_state.data_df = get_records_as_dataframe(get_session_direct())
-                st.rerun()
-
-            st.divider()
-
-            # Show import stats
-            if st.session_state.import_stats:
-                stats = st.session_state.import_stats
-                st.markdown("#### Import Statistics")
-                st.info(f"Rows imported: {stats.get('records_imported', 0)}")
-
-                if stats.get('processing_stats', {}).get('errors'):
-                    with st.expander("View Import Errors"):
-                        for error in stats['processing_stats']['errors'][:10]:
-                            st.warning(error)
-
         render_main_dashboard(df)
 
 

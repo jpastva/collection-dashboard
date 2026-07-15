@@ -3,7 +3,6 @@ from .visualizations import (
     create_age_distribution_chart,
     create_subject_coverage_chart,
     create_oclc_holdings_chart,
-    create_material_type_chart,
     create_publication_timeline_chart,
 )
 from .data_table import render_data_table, render_detail_view
@@ -15,7 +14,6 @@ __all__ = [
     'create_age_distribution_chart',
     'create_subject_coverage_chart',
     'create_oclc_holdings_chart',
-    'create_material_type_chart',
     'create_publication_timeline_chart',
     'render_data_table',
     'render_detail_view',

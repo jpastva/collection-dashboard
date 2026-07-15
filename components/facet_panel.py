@@ -41,7 +41,7 @@ def render_facet_panel(
                 'filter_decade',
                 'filter_usage',
                 'filter_subjects',
-                'filter_retain',
+                'filter_decision',
                 'filter_access',
                 'subject_search',
             ]
@@ -56,8 +56,8 @@ def render_facet_panel(
 
         # Item Policy filter
         st.markdown("#### Item Policy")
-        if 'item_policy' in df.columns:
-            item_policies = df['item_policy'].dropna().unique()
+        if 'Item Policy' in df.columns:
+            item_policies = df['Item Policy'].dropna().unique()
             item_policies = [p for p in item_policies if p and str(p).strip()]
             item_policy_widget_key = f"item_policy_filter{key_suffix}" if key_suffix else "item_policy_filter"
             item_policy_filter = st.multiselect(
@@ -67,14 +67,14 @@ def render_facet_panel(
                 key=item_policy_widget_key
             )
             if item_policy_filter:
-                filters['item_policy'] = item_policy_filter
+                filters['Item Policy'] = item_policy_filter
                 st.session_state['filter_item_policy'] = item_policy_filter
 
         st.divider()
 
         # Material Type filter
         st.markdown("#### Material Type")
-        material_types = df['material_type'].dropna().unique()
+        material_types = df['Material Type'].dropna().unique()
         material_types = [m for m in material_types if m and str(m).strip()]
         material_type_widget_key = f"material_type_filter{key_suffix}" if key_suffix else "material_type_filter"
         material_type_filter = st.multiselect(
@@ -84,40 +84,42 @@ def render_facet_panel(
             key=material_type_widget_key
         )
         if material_type_filter:
-            filters['material_type'] = material_type_filter
+            filters['Material Type'] = material_type_filter
             st.session_state['filter_material_type'] = material_type_filter
 
         st.divider()
 
         # LC Class filter
         st.markdown("#### LC Classification")
-        if 'call_number_class' in df.columns:
-            lc_classes = df[df['call_number_classification'] == 'LC']['call_number_class'].dropna().unique()
-            lc_classes = [c for c in lc_classes if c and str(c).strip()]
+        if 'call_number_classification' in df.columns and 'Permanent LC Classification Top Line' in df.columns:
+            lc_df = df[df['call_number_classification'] == 'LC']
+            if not lc_df.empty:
+                lc_classes = lc_df['Permanent LC Classification Top Line'].dropna().unique()
+                lc_classes = [c for c in lc_classes if c and str(c).strip()]
 
-            # Add descriptions
-            from utils.call_number_parser import get_lc_class_description
-            lc_options = {f"{c} - {get_lc_class_description(c)}": c for c in sorted(lc_classes)}
+                # Add descriptions
+                from utils.call_number_parser import get_lc_class_description
+                lc_options = {f"{c} - {get_lc_class_description(c)}": c for c in sorted(lc_classes)}
 
-            lc_widget_key = f"lc_class_filter{key_suffix}" if key_suffix else "lc_class_filter"
-            lc_display = st.multiselect(
-                "Select LC classes",
-                options=list(lc_options.keys()),
-                format_func=lambda x: x,
-                default=[k for k, v in lc_options.items() if v in st.session_state.get('filter_lc_class', [])],
-                key=lc_widget_key
-            )
-            lc_filter = [lc_options[d] for d in lc_display] if lc_display else []
-            if lc_filter:
-                filters['call_number_class'] = lc_filter
-                st.session_state['filter_lc_class'] = lc_filter
+                lc_widget_key = f"lc_class_filter{key_suffix}" if key_suffix else "lc_class_filter"
+                lc_display = st.multiselect(
+                    "Select LC classes",
+                    options=list(lc_options.keys()),
+                    format_func=lambda x: x,
+                    default=[k for k, v in lc_options.items() if v in st.session_state.get('filter_lc_class', [])],
+                    key=lc_widget_key
+                )
+                lc_filter = [lc_options[d] for d in lc_display] if lc_display else []
+                if lc_filter:
+                    filters['Permanent LC Classification Top Line'] = lc_filter
+                    st.session_state['filter_lc_class'] = lc_filter
 
         st.divider()
 
         # Publication decade filter
         st.markdown("#### Publication Period")
-        if 'publication_year_start' in df.columns:
-            valid_years = df[df['publication_year_start'].notna()]['publication_year_start']
+        if 'Publication Year Start' in df.columns:
+            valid_years = df[df['Publication Year Start'].notna()]['Publication Year Start']
             if len(valid_years) > 0:
                 min_year = int(valid_years.min())
                 max_year = int(valid_years.max())
@@ -139,7 +141,7 @@ def render_facet_panel(
                     # Convert to year range filter
                     year_min = min(selected_years)
                     year_max = max(selected_years) + 9
-                    filters['publication_year_start'] = (year_min, year_max)
+                    filters['Publication Year Start'] = (year_min, year_max)
                     st.session_state['filter_decade'] = [y // 10 for y in selected_years]
 
         st.divider()
@@ -171,10 +173,10 @@ def render_facet_panel(
 
         # Subject filter
         st.markdown("#### Subjects")
-        if 'subjects' in df.columns:
+        if 'Subjects' in df.columns:
             # Parse all subjects
             all_subjects = {}
-            for subjects_str in df['subjects'].dropna():
+            for subjects_str in df['Subjects'].dropna():
                 subjects = parse_subjects(subjects_str)
                 for subject in subjects:
                     all_subjects[subject] = all_subjects.get(subject, 0) + 1
@@ -200,24 +202,11 @@ def render_facet_panel(
             )
 
             if subject_filter:
-                filters['subjects'] = subject_filter
+                filters['Subjects'] = subject_filter
                 st.session_state['filter_subjects'] = subject_filter
 
         st.divider()
 
-        # Retention status filter
-        st.markdown("#### Retention Status")
-        retain_widget_key = f"retain_filter{key_suffix}" if key_suffix else "retain_filter"
-        retain_filter = st.radio(
-            "Committed to Retain",
-            options=["All", "Yes", "No"],
-            index=0,
-            key=retain_widget_key
-        )
-
-        if retain_filter != "All":
-            filters['has_committed_to_retain'] = (retain_filter == "Yes")
-            st.session_state['filter_retain'] = retain_filter
 
         st.divider()
 
@@ -232,8 +221,124 @@ def render_facet_panel(
         )
 
         if access_filter != "All":
-            filters['open_access'] = (access_filter == "Yes")
+            filters['Open Access'] = (access_filter == "Yes")
             st.session_state['filter_access'] = access_filter
+
+        # OCLC Holdings filter
+        if 'OCLC Holdings' in df.columns:
+            oclc_widget_key = f"oclc_holdings_filter{key_suffix}" if key_suffix else "oclc_holdings_filter"
+            oclc_holdings_filter = st.number_input(
+                "Minimum OCLC Holdings",
+                min_value=0,
+                value=st.session_state.get('filter_oclc_holdings', 0),
+                step=1,
+                key=oclc_widget_key
+            )
+            if oclc_holdings_filter > 0:
+                filters['OCLC Holdings'] = oclc_holdings_filter
+                st.session_state['filter_oclc_holdings'] = oclc_holdings_filter
+
+        # PALCI Holdings filter
+        if 'PALCI Holdings' in df.columns:
+            palci_widget_key = f"palci_holdings_filter{key_suffix}" if key_suffix else "palci_holdings_filter"
+            palci_holdings_filter = st.number_input(
+                "Minimum PALCI Holdings",
+                min_value=0,
+                value=st.session_state.get('filter_palci_holdings', 0),
+                step=1,
+                key=palci_widget_key
+            )
+            if palci_holdings_filter > 0:
+                filters['PALCI Holdings'] = palci_holdings_filter
+                st.session_state['filter_palci_holdings'] = palci_holdings_filter
+
+        # E-copy? filter
+        if 'E-copy?' in df.columns:
+            ecopy_widget_key = f"ecopy_filter{key_suffix}" if key_suffix else "ecopy_filter"
+            ecopy_filter = st.radio(
+                "E-copy Available",
+                options=["All", "Yes", "No"],
+                index=0,
+                key=ecopy_widget_key
+            )
+
+            if ecopy_filter != "All":
+                filters['E-copy?'] = (ecopy_filter == "Yes")
+                st.session_state['filter_ecopy'] = ecopy_filter
+
+        # HathiTrust filter
+        if 'HathiTrust' in df.columns:
+            hathi_widget_key = f"hathitrust_filter{key_suffix}" if key_suffix else "hathitrust_filter"
+            hathitrust_filter = st.checkbox(
+                "Has HathiTrust Copy",
+                value=st.session_state.get('filter_hathitrust', False),
+                key=hathi_widget_key
+            )
+            if hathitrust_filter:
+                filters['HathiTrust'] = True
+                st.session_state['filter_hathitrust'] = hathitrust_filter
+
+        # Item ID filter (MMS Id)
+        if 'MMS Id' in df.columns:
+            item_id_widget_key = f"item_id_filter{key_suffix}" if key_suffix else "item_id_filter"
+            item_id_filter = st.text_input(
+                "Item ID (MMS ID)",
+                value=st.session_state.get('filter_item_id', ""),
+                key=item_id_widget_key
+            )
+            if item_id_filter:
+                filters['MMS Id'] = item_id_filter
+                st.session_state['filter_item_id'] = item_id_filter
+
+        # Decision filter
+        if 'Decision' in df.columns:
+            decision_widget_key = f"decision_filter{key_suffix}" if key_suffix else "decision_filter"
+            decision_filter = st.radio(
+                "Decision",
+                options=["All", "Blank", "KEEP", "DISCARD"],
+                index=0 if st.session_state.get('filter_decision', "All") == "All" else (1 if st.session_state.get('filter_decision') == "Blank" else (2 if st.session_state.get('filter_decision') == "KEEP" else 3)),
+                key=decision_widget_key
+            )
+            if decision_filter != "All":
+                if decision_filter == "Blank":
+                    # Filter for empty/null values
+                    filters['Decision'] = ""
+                else:
+                    filters['Decision'] = decision_filter
+                st.session_state['filter_decision'] = decision_filter
+
+        # Selector filter
+        if 'Selector' in df.columns:
+            selector_widget_key = f"selector_filter{key_suffix}" if key_suffix else "selector_filter"
+            # Get unique non-null values for the selector column
+            selector_vals = df['Selector'].dropna().astype(str).unique()
+            selector_vals = [v for v in selector_vals if v and v.strip()]
+            selector_options = ["All"] + sorted(selector_vals)
+            selector_default = st.session_state.get('filter_selector', "All")
+            if selector_default not in selector_options:
+                selector_default = "All"
+            selector_index = selector_options.index(selector_default)
+            selector_filter = st.selectbox(
+                "Selector",
+                options=selector_options,
+                index=selector_index,
+                key=selector_widget_key
+            )
+            if selector_filter != "All":
+                filters['Selector'] = selector_filter
+                st.session_state['filter_selector'] = selector_filter
+
+        # Notes filter (Retention Note)
+        if 'Retention Note' in df.columns:
+            notes_widget_key = f"notes_filter{key_suffix}" if key_suffix else "notes_filter"
+            notes_filter = st.text_input(
+                "Notes",
+                value=st.session_state.get('filter_notes', ""),
+                key=notes_widget_key
+            )
+            if notes_filter:
+                filters['Retention Note'] = notes_filter
+                st.session_state['filter_notes'] = notes_filter
 
     return filters
 
@@ -262,16 +367,18 @@ def apply_filters_to_dataframe(
             # Special filter
             if column == '_usage_ranges':
                 # Usage range filter
-                mask = pd.Series([False] * len(result_df))
+                # Use the actual column name from the dataframe (Google Sheet format)
+                loans_column = 'Num of Loans Including Pre-Migration (In House + Not In House)' if 'Num of Loans Including Pre-Migration (In House + Not In House)' in result_df.columns else 'Loans Including Pre-Migration (In House + Not In House)'
+                mask = pd.Series(False, index=result_df.index, dtype=bool)
                 for min_val, max_val in value:
                     if max_val == float('inf'):
-                        mask |= (result_df['num_loans'] >= min_val)
+                        mask |= (result_df[loans_column] >= min_val)
                     else:
-                        mask |= (result_df['num_loans'] >= min_val) & (result_df['num_loans'] <= max_val)
+                        mask |= (result_df[loans_column] >= min_val) & (result_df[loans_column] <= max_val)
                 result_df = result_df[mask]
             continue
 
-        if column == 'subjects':
+        if column == 'Subjects':
             # Subject filter - parse and check each record
             def has_matching_subject(subjects_str):
                 if pd.isna(subjects_str):
@@ -279,7 +386,7 @@ def apply_filters_to_dataframe(
                 subjects = parse_subjects(subjects_str)
                 return any(s in value for s in subjects)
 
-            mask = result_df['subjects'].apply(has_matching_subject)
+            mask = result_df['Subjects'].apply(has_matching_subject)
             result_df = result_df[mask]
 
         elif isinstance(value, tuple):
@@ -299,7 +406,7 @@ def apply_filters_to_dataframe(
             result_df = result_df[result_df[column] == value]
 
         else:
-            # Exact match filter
+            # Exact match filter (including empty string for blanks)
             result_df = result_df[result_df[column] == value]
 
     return result_df

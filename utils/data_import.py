@@ -4,6 +4,7 @@ Handles loading, cleaning, and storing bibliographic records.
 """
 
 import pandas as pd
+import re
 from typing import List, Dict, Any, Optional, Tuple
 from sqlalchemy.orm import Session
 import os
@@ -34,59 +35,66 @@ from utils.call_number_parser import parse_call_number
 
 # Column name mappings (handling potential variations)
 COLUMN_MAPPINGS = {
-    'Library Name': ['library_name', 'library', 'library name'],
-    'Location Name': ['location_name', 'location', 'location name'],
-    'Permanent Call Number Type': ['call_number_type', 'call number type', 'permanent_call_number_type'],
-    'Permanent Call Number': ['permanent_call_number', 'call_number', 'permanent call number', 'call number'],
-    'Item Copy Id': ['item_copy_id', 'item_copy', 'item id', 'copy id'],
-    'Material Type': ['material_type', 'material type', 'format'],
-    'Item Policy': ['item_policy', 'item policy'],
-    'Barcode': ['barcode'],
-    'Retention Note': ['retention_note', 'retention note', 'notes'],
-    'Title': ['title'],
-    'Title (Normalized)': ['title_normalized', 'normalized_title'],
-    'Author': ['author', 'creator', 'primary_author'],
-    'Author (Contributor)': ['author_contributor', 'contributor', 'contributors', 'additional authors'],
-    'Publisher': ['publisher'],
-    'Publication Place': ['publication_place', 'pub_place', 'place_published'],
-    'Publication Date': ['publication_date', 'pub_date', 'date', 'year'],
-    'Begin Publication Date': ['begin_publication_date', 'begin date', 'start date'],
-    'End Publication Date': ['end_publication_date', 'end date', 'finish date'],
-    'Type of Date': ['type_of_date', 'date type', 'date_type'],
-    'Edition': ['edition'],
-    'Series': ['series'],
-    'MMS Id': ['mms_id', 'mmsid', 'mms id'],
-    'ISBN': ['isbn'],
-    'ISBN (Normalized)': ['isbn_normalized', 'normalized_isbn'],
-    'ISSN': ['issn'],
-    'ISSN (Normalized)': ['issn_normalized', 'normalized_issn'],
-    'OCLC Control Number (035a)': ['oclc_control_number', 'oclc', 'oclc_number', '035a'],
-    'OCLC Number': ['oclc_number_raw', 'oclc_raw'],
-    'Subjects': ['subjects', 'subject', 'topic'],
-    'Summary Holdings': ['summary_holdings', 'holdings', 'coverage'],
-    '590': ['field_590', 'marc_590'],
-    'Num of Loans Including Pre-Migration (In House + Not In House)': ['num_loans', 'loans', 'circulation', 'total_loans'],
-    'Num of Loans (In House + Not In House)': ['num_loans_actual', 'actual_loans'],
-    'Num of Requests (Total)': ['num_requests', 'requests', 'total_requests'],
-    'Last Loan Date': ['last_loan_date', 'last_circulation_date'],
-    'Creation Date': ['creation_date', 'created_date', 'date_created'],
-    'E-copy?': ['e_copy', 'ecopy'],
-    'E-overlap collection': ['e_overlap_collection', 'overlap_collection'],
-    'E-overlap interface': ['e_overlap_interface', 'interface_overlap'],
-    'Language': ['language', 'lang'],
-    'Normalized Call Number': ['normalized_call_number', 'sort_call_number'],
-    'Open Access': ['open_access', 'open access'],
-    'Electronic access type': ['electronic_access_type', 'access_type'],
-    'Has Committed To Retain': ['has_committed_to_retain', 'committed_to_retain', 'retain'],
-    'OCLC Holdings': ['oclc_holdings', 'holdings', 'oclc holdings'],
-    'PALCI Holdings': ['palci_holdings', 'palci'],
-    'Permanent LC Classification Top Line': ['lc_subclass', 'lc_top_line'],
+    'Library Name': ['Library Name', 'library_name', 'library', 'library name'],
+    'Location Name': ['Location Name', 'location_name', 'location', 'location name'],
+    'Permanent Call Number Type': ['Permanent Call Number Type', 'call_number_type', 'call number type', 'permanent_call_number_type'],
+    'Permanent Call Number': ['Permanent Call Number', 'permanent_call_number', 'call_number', 'permanent call number', 'call number'],
+    'Item Copy Id': ['Item Copy Id', 'item_copy_id', 'item_copy', 'item id', 'copy id'],
+    'Material Type': ['Material Type', 'material_type', 'material type', 'format'],
+    'Item Policy': ['Item Policy', 'item_policy', 'item policy'],
+    'Barcode': ['Barcode', 'barcode'],
+    'Retention Note': ['Retention Note', 'Retention note', 'retention_note', 'retention note', 'notes', 'Notes'],
+    'Title': ['Title', 'title'],
+    'Title (Normalized)': ['Title (Normalized)', 'title_normalized', 'normalized_title'],
+    'Author': ['Author', 'author', 'creator', 'primary_author'],
+    'Author (Contributor)': ['Author (contributor)', 'author_contributor', 'contributor', 'contributors', 'additional authors'],
+    'Publisher': ['Publisher', 'publisher'],
+    'Publication Place': ['Publication Place', 'publication_place', 'pub_place', 'place_published'],
+    'Publication Date': ['Publication Date', 'publication_date', 'pub_date', 'date', 'year'],
+    'Begin Publication Date': ['Begin Pub Date', 'begin_publication_date', 'begin date', 'start date'],
+    'End Publication Date': ['End Pub Date', 'end_publication_date', 'end date', 'finish date'],
+    'Type of date': ['Type of date', 'type_of_date', 'date type', 'date_type'],
+    'Edition': ['Edition', 'edition'],
+    'Series': ['Series', 'series'],
+    'MMS Id': ['MMS Id', 'mms_id', 'mmsid', 'mms id'],
+    'ISBN': ['ISBN', 'isbn'],
+    'ISBN (Normalized)': ['ISBN (Normalized)', 'isbn_normalized', 'normalized_isbn'],
+    'ISSN': ['ISSN', 'issn'],
+    'ISSN (Normalized)': ['ISSN (Normalized)', 'issn_normalized', 'normalized_issn'],
+    'OCLC Control Number (035a)': ['OCLC Control Number (035a)', 'oclc_control_number', 'oclc', 'oclc_number', '035a'],
+    'OCLC Number': ['OCLC Number', 'oclc_number_raw', 'oclc_raw'],
+    'Subjects': ['Subjects', 'subjects', 'subject', 'topic'],
+    'Summary Holdings': ['Summary Holdings', 'summary_holdings', 'holdings', 'coverage'],
+    '590': ['590', 'field_590', 'marc_590'],
+    'Loans Including Pre-Migration (In House + Not In House)': ['Num of Loans Including Pre-Migration (In House + Not In House)', 'Number of Loans Including Pre-Migration (In House + Not In House)', 'num_loans', 'loans', 'circulation', 'total_loans'],
+    'Loans (In House + Not In House)': ['Loans (In House + Not In House)', 'num_loans_actual', 'actual_loans'],
+    'Requests (Total)': ['Num of Requests (Total)', 'Number of Requests (Total)', 'Requests (Total)', 'num_requests', 'requests', 'total_requests'],
+    'Last Loan Date': ['Last Loan Date', 'last_loan_date', 'last_circulation_date'],
+    'Creation Date': ['Creation Date', 'creation_date', 'created_date', 'date_created'],
+    'E-copy?': ['E-copy?', 'e_copy', 'ecopy'],
+    'E-overlap collection': ['E-overlap collection', 'e_overlap_collection', 'overlap_collection'],
+    'E-overlap interface': ['E-overlap interface', 'e_overlap_interface', 'interface_overlap'],
+    'Language': ['Language', 'language', 'lang'],
+    'Normalized Call Number': ['Normalized Call Number', 'normalized_call_number', 'sort_call_number'],
+    'Open Access': ['Open Access', 'open_access', 'open access'],
+    'Electronic access type': ['eR access type', 'electronic_access_type', 'access_type', 'eR access type'],
+    'Has Committed To Retain': ['Has Committed To Retain', 'has_committed_to_retain', 'committed_to_retain', 'retain', 'Has Committeed to Retain', 'has_committeed_to_retain', 'committeed_to_retain'],
+    'Decision': ['Decision', 'decision'],
+    'OCLC Holdings': ['OCLC Holdings', 'oclc_holdings', 'holdings', 'oclc holdings'],
+    'PALCI Holdings': ['PALCI Holdings', 'palci_holdings', 'palci'],
+    'HathiTrust': ['HathiTrust', 'hathitrust'],
+    'Permanent LC Classification Top Line': ['Permanent LC Classification Top Line', 'lc_subclass', 'lc_top_line'],
 }
 
 
 def normalize_column_name(col_name: str) -> str:
     """Normalize column name for matching."""
-    return col_name.strip().lower().replace('_', ' ').replace('-', ' ')
+    import re
+    # Strip whitespace, convert to lowercase, replace underscores/hyphens with spaces
+    normalized = col_name.strip().lower().replace('_', ' ').replace('-', ' ')
+    # Collapse multiple spaces to single space
+    normalized = re.sub(r'\s+', ' ', normalized)
+    return normalized
 
 
 def find_column(df_columns: List[str], target_column: str) -> Optional[str]:
@@ -110,7 +118,7 @@ def find_column(df_columns: List[str], target_column: str) -> Optional[str]:
         variations = COLUMN_MAPPINGS[target_column]
         for variation in variations:
             for col in df_columns:
-                if normalize_column_name(col) == variation:
+                if normalize_column_name(col) == normalize_column_name(variation):
                     return col
 
     return None
@@ -153,7 +161,20 @@ def clean_and_normalize_row(row: pd.Series) -> Dict[str, Any]:
 
     # Get raw values with defaults
     def get_val(col: str, default=None):
-        val = row.get(col, default)
+        # Try direct lookup first
+        if col in row.index:
+            val = row[col]
+        else:
+            # Try to find a matching column using our normalization
+            target_normalized = normalize_column_name(col)
+            val = None
+            for col_name in row.index:
+                if normalize_column_name(col_name) == target_normalized:
+                    val = row[col_name]
+                    break
+            if val is None:  # No match found
+                val = default
+
         return str(val) if val is not None and pd.notna(val) else default
 
     # Key identifiers
@@ -168,140 +189,156 @@ def clean_and_normalize_row(row: pd.Series) -> Dict[str, Any]:
     result['oclc_number_raw'] = get_val('OCLC Number')
 
     # Basic info
-    result['library_name'] = extract_first_value(get_val('Library Name', ''))
-    result['location_name'] = extract_first_value(get_val('Location Name', ''))
-    result['title'] = clean_title(get_val('Title', ''))
-    result['title_normalized'] = normalize_title(get_val('Title (Normalized)', '')) or normalize_title(get_val('Title', ''))
-    result['author'] = clean_author(get_val('Author', ''))
-    result['author_contributor'] = clean_author(get_val('Author (Contributor)', ''))
-    result['publisher'] = clean_publisher(get_val('Publisher', ''))
-    result['publication_place'] = get_val('Publication Place')
-    result['publication_date'] = get_val('Publication Date', '')
-    result['begin_publication_date'] = get_val('Begin Publication Date', '')
-    result['end_publication_date'] = get_val('End Publication Date', '')
-    result['type_of_date'] = get_val('Type of Date', '')
+    result['Library Name'] = extract_first_value(get_val('Library Name', ''))
+    result['Location Name'] = extract_first_value(get_val('Location Name', ''))
+    result['Title'] = clean_title(get_val('Title', ''))
+    result['Title (Normalized)'] = normalize_title(get_val('Title (Normalized)', '')) or normalize_title(get_val('Title', ''))
+    result['Author'] = clean_author(get_val('Author', ''))
+    result['Author (Contributor)'] = clean_author(get_val('Author (Contributor)', ''))
+    result['Publisher'] = clean_publisher(get_val('Publisher', ''))
+    result['Publication Place'] = get_val('Publication Place')
+    result['Publication Date'] = get_val('Publication Date', '')
+    result['Begin Publication Date'] = get_val('Begin Publication Date', '')
+    result['End Publication Date'] = get_val('End Publication Date', '')
+    result['Type of date'] = get_val('Type of date', '')
 
     # Item Policy and Serial/Monograph separation
     item_policy = get_val('Item Policy', '').strip().upper()
-    result['item_policy'] = item_policy
+    result['Item Policy'] = item_policy
     is_serial = item_policy in ['JOURNAL', 'SERIAL']
 
     # Publication date - use begin/end if provided, otherwise extract from publication_date
-    if result['begin_publication_date'] and result['end_publication_date']:
+    if result['Begin Publication Date'] and result['End Publication Date']:
         # Use explicitly provided begin/end dates
-        begin_result = normalize_publication_date(result['begin_publication_date'], is_serial=is_serial)
-        end_result = normalize_publication_date(result['end_publication_date'], is_serial=is_serial)
-        result['publication_year_start'] = begin_result[0] if begin_result[0] is not None else None
-        result['publication_year_end'] = end_result[1] if end_result[1] is not None else None
+        begin_result = normalize_publication_date(result['Begin Publication Date'], is_serial=is_serial)
+        end_result = normalize_publication_date(result['End Publication Date'], is_serial=is_serial)
+        result['Publication Year Start'] = begin_result[0] if begin_result[0] is not None else None
+        result['Publication Year End'] = end_result[1] if end_result[1] is not None else None
         # Fallback to publication_date if begin/end parsing failed
-        if result['publication_year_start'] is None or result['publication_year_end'] is None:
-            pub_date_result = normalize_publication_date(result['publication_date'], is_serial=is_serial)
-            result['publication_year_start'] = pub_date_result[0]
-            result['publication_year_end'] = pub_date_result[1]
+        if result['Publication Year Start'] is None or result['Publication Year End'] is None:
+            pub_date_result = normalize_publication_date(result['Publication Date'], is_serial=is_serial)
+            result['Publication Year Start'] = pub_date_result[0]
+            result['Publication Year End'] = pub_date_result[1]
     else:
         # Extract from publication_date
-        pub_date_result = normalize_publication_date(result['publication_date'], is_serial=is_serial)
-        result['publication_year_start'] = pub_date_result[0]
-        result['publication_year_end'] = pub_date_result[1]
+        pub_date_result = normalize_publication_date(result['Publication Date'], is_serial=is_serial)
+        result['Publication Year Start'] = pub_date_result[0]
+        result['Publication Year End'] = pub_date_result[1]
 
     result['edition'] = extract_first_value(get_val('Edition', ''))
     result['series'] = extract_first_value(get_val('Series', ''))
 
     # Item info
-    result['item_copy_id'] = get_val('Item Copy Id')
-    result['material_type'] = extract_first_value(get_val('Material Type', ''))
-    result['call_number_type'] = extract_first_value(get_val('Permanent Call Number Type', ''))
-    result['permanent_call_number_original'] = get_val('Permanent Call Number')
-    result['normalized_call_number'] = get_val('Normalized Call Number')
-    result['retention_note'] = get_val('Retention Note', '')
+    result['Item Copy Id'] = get_val('Item Copy Id')
+    result['Material Type'] = extract_first_value(get_val('Material Type', ''))
+    result['Permanent Call Number Type'] = extract_first_value(get_val('Permanent Call Number Type', ''))
+    result['Permanent Call Number'] = get_val('Permanent Call Number')
+    result['Normalized Call Number'] = get_val('Normalized Call Number')
+    result['Retention Note'] = get_val('Retention Note', '')
 
     # Parse call number
     call_number_result = parse_call_number(
-        result['permanent_call_number'] or '',
-        result['call_number_type'] or ''
+        result['Permanent Call Number'] or '',
+        result['Permanent Call Number Type'] or ''
     )
     result['call_number_classification'] = call_number_result.get('classification_type')
     result['call_number_class'] = call_number_result.get('class')
     # Map 'Permanent LC Classification Top Line' to call_number_subclass as requested
-    result['call_number_subclass'] = get_val('Permanent LC Classification Top Line') or call_number_result.get('subclass')
+    result['Permanent LC Classification Top Line'] = get_val('Permanent LC Classification Top Line') or call_number_result.get('subclass')
     result['call_number_sortable'] = call_number_result.get('sortable_string')
 
     # Usage
-    num_loans_str = get_val('Num of Loans Including Pre-Migration (In House + Not In House)', '0')
+    num_loans_str = get_val('Loans Including Pre-Migration (In House + Not In House)', '0')
     try:
-        result['num_loans'] = int(float(num_loans_str)) if num_loans_str else 0
+        result['Loans Including Pre-Migration (In House + Not In House)'] = int(float(num_loans_str)) if num_loans_str else 0
     except (ValueError, TypeError):
-        result['num_loans'] = 0
+        result['Loans Including Pre-Migration (In House + Not In House)'] = 0
 
-    num_loans_actual_str = get_val('Num of Loans (In House + Not In House)', '0')
+    # Try to get Loans (In House + Not In House) from its expected column
+    num_loans_actual_str = get_val('Loans (In House + Not In House)', '0')
+    # If we got the default value, try to get it from the similar column that does exist
+    if num_loans_actual_str == '0':
+        # Try to get the value from Loans Including Pre-Migration (In House + Not In House)
+        alt_value = get_val('Loans Including Pre-Migration (In House + Not In House)', '0')
+        if alt_value != '0':
+            num_loans_actual_str = alt_value
     try:
-        result['num_loans_actual'] = int(float(num_loans_actual_str)) if num_loans_actual_str else 0
+        result['Loans (In House + Not In House)'] = int(float(num_loans_actual_str)) if num_loans_actual_str else 0
     except (ValueError, TypeError):
-        result['num_loans_actual'] = 0
+        result['Loans (In House + Not In House)'] = 0
 
-    num_requests_str = get_val('Num of Requests (Total)', '0')
+    num_requests_str = get_val('Requests (Total)', '0')
     try:
-        result['num_requests'] = int(float(num_requests_str)) if num_requests_str else 0
+        result['Requests (Total)'] = int(float(num_requests_str)) if num_requests_str else 0
     except (ValueError, TypeError):
-        result['num_requests'] = 0
+        result['Requests (Total)'] = 0
 
     # Boolean fields
     open_access_val = get_val('Open Access', '')
-    result['open_access'] = str(open_access_val).lower() in ['yes', 'true', '1', 'y']
+    result['Open Access'] = str(open_access_val).lower() in ['yes', 'true', '1', 'y']
 
     e_copy_val = get_val('E-copy?', '')
-    result['e_copy'] = str(e_copy_val).lower() in ['yes', 'true', '1', 'y']
-    result['electronic_access_type'] = get_val('Electronic access type')
-    result['e_overlap_collection'] = get_val('E-overlap collection')
-    result['e_overlap_interface'] = normalize_e_overlap_interface(get_val('E-overlap interface'))
+    result['E-copy?'] = str(e_copy_val).lower() in ['yes', 'true', '1', 'y']
+    result['Electronic access type'] = get_val('Electronic access type')
+    result['E-overlap collection'] = get_val('E-overlap collection')
+    result['E-overlap interface'] = normalize_e_overlap_interface(get_val('E-overlap interface'))
 
-    retain_val = get_val('Has Committed To Retain', '')
-    result['has_committed_to_retain'] = str(retain_val).lower() in ['yes', 'true', '1', 'y']
+    hathi_val = get_val('HathiTrust', '')
+    result['HathiTrust'] = str(hathi_val).lower() in ['yes', 'true', '1', 'y']
+
+    # Handle Decision field - try both possible source column names
+    decision_value = get_val('Has Committed To Retain', None)
+    if decision_value is None:
+        decision_value = get_val('Decision', None)
+    if decision_value is None:
+        decision_value = ''
+    result['Decision'] = decision_value  # Store original value for display
+    result['Has Committed To Retain'] = str(decision_value).lower() in ['yes', 'true', '1', 'y']  # Boolean for internal use
 
     # Dates
-    result['creation_date'] = get_val('Creation Date')
-    result['last_loan_date'] = get_val('Last Loan Date')
+    result['Creation Date'] = get_val('Creation Date')
+    result['Last Loan Date'] = get_val('Last Loan Date')
 
     # Subjects - store original for display, parse for faceting
     subjects_raw = get_val('Subjects', '')
-    result['subjects'] = subjects_raw
+    result['Subjects'] = subjects_raw
 
     # Summary Holdings - process for coverage calculation
     summary_holdings_raw = get_val('Summary Holdings', '')
-    result['summary_holdings'] = summary_holdings_raw
+    result['Summary Holdings'] = summary_holdings_raw
     # Also compute normalized begin/end years for coverage visualization
     if summary_holdings_raw:
         hold_begin, hold_end = normalize_summary_holdings(summary_holdings_raw)
-        result['summary_holdings_begin_year'] = hold_begin
-        result['summary_holdings_end_year'] = hold_end
+        result['Summary Holdings Begin Year'] = hold_begin
+        result['Summary Holdings End Year'] = hold_end
     else:
-        result['summary_holdings_begin_year'] = None
-        result['summary_holdings_end_year'] = None
+        result['Summary Holdings Begin Year'] = None
+        result['Summary Holdings End Year'] = None
 
     # 590 field
     field_590_raw = get_val('590', '')
-    result['field_590'] = normalize_field_590(field_590_raw)
+    result['590'] = normalize_field_590(field_590_raw)
 
     # Language
     language_raw = get_val('Language', '')
-    result['language'] = normalize_language(language_raw)
+    result['Language'] = normalize_language(language_raw)
 
     # Holdings
     oclc_holdings_str = get_val('OCLC Holdings', '')
     try:
-        result['oclc_holdings'] = int(float(oclc_holdings_str)) if oclc_holdings_str else None
+        result['OCLC Holdings'] = int(float(oclc_holdings_str)) if oclc_holdings_str else None
     except (ValueError, TypeError):
-        result['oclc_holdings'] = None
+        result['OCLC Holdings'] = None
 
     palci_holdings_str = get_val('PALCI Holdings', '')
     try:
-        result['palci_holdings'] = int(float(palci_holdings_str)) if palci_holdings_str else None
+        result['PALCI Holdings'] = int(float(palci_holdings_str)) if palci_holdings_str else None
     except (ValueError, TypeError):
-        result['palci_holdings'] = None
+        result['PALCI Holdings'] = None
 
     # Metadata
-    result['created_at'] = datetime.now().isoformat()
-    result['updated_at'] = datetime.now().isoformat()
+    result['Created At'] = datetime.now().isoformat()
+    result['Updated At'] = datetime.now().isoformat()
 
     return result
 
@@ -309,13 +346,24 @@ def clean_and_normalize_row(row: pd.Series) -> Dict[str, Any]:
 def process_dataframe(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """
     Process a DataFrame by cleaning and normalizing all columns.
+    Returns a DataFrame with Google Sheet column names for known columns.
 
     Args:
         df: Raw DataFrame from file
 
     Returns:
-        Tuple of (processed DataFrame, processing stats)
+        Tuple of (processed DataFrame with Google Sheet column names, processing stats)
     """
+    # Build mappings for renaming
+    reverse_mapping = {}
+    for standard, variations in COLUMN_MAPPINGS.items():
+        for v in variations:
+            reverse_mapping[v] = standard
+
+    display_mapping = {}
+    for standard, variations in COLUMN_MAPPINGS.items():
+        display_mapping[standard] = variations[0]  # First variation is the Google Sheet column name
+
     stats = {
         'total_rows': len(df),
         'columns_found': [],
@@ -323,20 +371,10 @@ def process_dataframe(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         'errors': [],
     }
 
-    # Map columns
-    column_map = {}
-    for standard_col in COLUMN_MAPPINGS.keys():
-        found_col = find_column(list(df.columns), standard_col)
-        if found_col:
-            column_map[found_col] = standard_col
-            stats['columns_found'].append(f"{standard_col} (from '{found_col}')")
-        else:
-            stats['columns_missing'].append(standard_col)
+    # Rename input dataframe to internal standard names for known columns
+    df_renamed = df.rename(columns=reverse_mapping)
 
-    # Rename columns to standard names
-    df_renamed = df.rename(columns=column_map)
-
-    # Process each row
+    # Process each row using internal standard names
     processed_rows = []
     for idx, row in df_renamed.iterrows():
         try:
@@ -345,8 +383,32 @@ def process_dataframe(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         except Exception as e:
             stats['errors'].append(f"Row {idx}: {str(e)}")
 
-    # Create processed DataFrame
+    # Create processed DataFrame with internal standard names
     processed_df = pd.DataFrame(processed_rows)
+
+    # Rename back to Google Sheet column names for known columns
+    # Only rename columns that are in our display_mapping (known columns)
+    columns_to_rename = {col: display_mapping[col] for col in processed_df.columns if col in display_mapping}
+    processed_df = processed_df.rename(columns=columns_to_rename)
+
+    # Update stats to show Google Sheet column names
+    for standard_col in COLUMN_MAPPINGS.keys():
+        google_sheet_col = display_mapping[standard_col]
+        # Check if this column was found in the original data (by seeing if we have data for it)
+        # We'll check if the column exists in the processed dataframe and has non-null values
+        if google_sheet_col in processed_df.columns and not processed_df[google_sheet_col].isna().all():
+            # Find what the original column name was (for reporting)
+            original_col = None
+            for col in df.columns:
+                if col in reverse_mapping and reverse_mapping[col] == standard_col:
+                    original_col = col
+                    break
+            if original_col:
+                stats['columns_found'].append(f"{standard_col} (from '{original_col}' -> '{google_sheet_col}')")
+            else:
+                stats['columns_found'].append(f"{standard_col} (mapped to '{google_sheet_col}')")
+        else:
+            stats['columns_missing'].append(f"{standard_col} (expected '{google_sheet_col}')")
 
     return processed_df, stats
 

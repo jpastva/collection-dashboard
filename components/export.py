@@ -130,18 +130,18 @@ def create_summary_report(df: pd.DataFrame) -> Dict[str, Any]:
 
     # Basic counts
     total_items = len(df)
-    unique_titles = df['title'].nunique() if 'title' in df.columns else 0
-    unique_authors = df['author'].nunique() if 'author' in df.columns and df['author'].notna().any() else 0
+    unique_titles = df['Title'].nunique() if 'Title' in df.columns else 0
+    unique_authors = df['Author'].nunique() if 'Author' in df.columns and df['Author'].notna().any() else 0
 
     # Usage statistics
-    total_loans = int(df['num_loans'].sum()) if 'num_loans' in df.columns else 0
-    avg_loans = float(df['num_loans'].mean()) if 'num_loans' in df.columns and len(df) > 0 else 0
-    max_loans = int(df['num_loans'].max()) if 'num_loans' in df.columns else 0
+    total_loans = int(df['Num of Loans Including Pre-Migration (In House + Not In House)'].sum()) if 'Num of Loans Including Pre-Migration (In House + Not In House)' in df.columns else 0
+    avg_loans = float(df['Num of Loans Including Pre-Migration (In House + Not In House)'].mean()) if 'Num of Loans Including Pre-Migration (In House + Not In House)' in df.columns and len(df) > 0 else 0
+    max_loans = int(df['Num of Loans Including Pre-Migration (In House + Not In House)'].max()) if 'Num of Loans Including Pre-Migration (In House + Not In House)' in df.columns else 0
 
     # Publication statistics
     pub_stats = {}
-    if 'publication_year_start' in df.columns:
-        valid_years = df[df['publication_year_start'].notna()]['publication_year_start']
+    if 'Publication Year Start' in df.columns:
+        valid_years = df[df['Publication Year Start'].notna()]['Publication Year Start']
         if len(valid_years) > 0:
             pub_stats = {
                 'earliest_year': int(valid_years.min()),
@@ -152,22 +152,22 @@ def create_summary_report(df: pd.DataFrame) -> Dict[str, Any]:
 
     # Material type distribution
     material_dist = {}
-    if 'material_type' in df.columns:
-        material_dist = df['material_type'].value_counts().head(10).to_dict()
+    if 'Material Type' in df.columns:
+        material_dist = df['Material Type'].value_counts().head(10).to_dict()
 
     # LC Class distribution
     lc_dist = {}
     if 'call_number_classification' in df.columns:
-        lc_df = df[df['call_number_classification'] == 'LC']
+        lc_df = df[df['call_number_classification'] == 'Library of Congress classification']
         if len(lc_df) > 0:
-            lc_dist = lc_df['call_number_class'].value_counts().head(10).to_dict()
+            lc_dist = lc_df['Permanent LC Classification Top Line'].value_counts().head(10).to_dict()
 
     # Subject distribution
     subject_dist = {}
-    if 'subjects' in df.columns:
+    if 'Subjects' in df.columns:
         from utils.cleaners import parse_subjects
         all_subjects = {}
-        for subjects_str in df['subjects'].dropna():
+        for subjects_str in df['Subjects'].dropna():
             subjects = parse_subjects(subjects_str)
             for subject in subjects:
                 all_subjects[subject] = all_subjects.get(subject, 0) + 1
@@ -175,8 +175,8 @@ def create_summary_report(df: pd.DataFrame) -> Dict[str, Any]:
 
     # Retention stats
     retention_stats = {}
-    if 'has_committed_to_retain' in df.columns:
-        committed_count = int(df['has_committed_to_retain'].sum())
+    if 'Has Committed To Retain' in df.columns:
+        committed_count = int(df['Has Committed To Retain'].sum())
         retention_stats = {
             'committed_to_retain': committed_count,
             'not_committed': total_items - committed_count,
@@ -184,8 +184,8 @@ def create_summary_report(df: pd.DataFrame) -> Dict[str, Any]:
 
     # Open access stats
     access_stats = {}
-    if 'open_access' in df.columns:
-        open_count = int(df['open_access'].sum())
+    if 'Open Access' in df.columns:
+        open_count = int(df['Open Access'].sum())
         access_stats = {
             'open_access': open_count,
             'restricted': total_items - open_count,

@@ -31,12 +31,10 @@ def render_report_menu(df: pd.DataFrame) -> Optional[Dict[str, Any]]:
             "Collection Summary Report",
             "Usage Analysis Report",
             "Subject Coverage Report",
-            "Retention Status Report",
             "Publication Age Report",
-            "Custom Report",
         ],
         index=["Collection Summary Report", "Usage Analysis Report", "Subject Coverage Report",
-               "Retention Status Report", "Publication Age Report", "Custom Report"].index(st.session_state.report_type)
+               "Publication Age Report"].index(st.session_state.report_type)
     )
 
     # Update session state when report type changes
@@ -49,17 +47,27 @@ def render_report_menu(df: pd.DataFrame) -> Optional[Dict[str, Any]]:
     # Date range filter for reports
     col1, col2 = st.columns(2)
     with col1:
-        if 'publication_year_start' in df.columns:
-            valid_years = df[df['publication_year_start'].notna()]['publication_year_start']
+        if 'Publication Year Start' in df.columns:
+            valid_years = df[df['Publication Year Start'].notna()]['Publication Year Start']
             if len(valid_years) > 0:
                 min_year = int(valid_years.min())
                 max_year = int(valid_years.max())
-                year_range = st.slider(
-                    "Publication Year Range",
-                    min_value=min_year,
-                    max_value=max_year,
-                    value=(min_year, max_year)
-                )
+                # Handle case where all years are the same
+                if min_year == max_year:
+                    # Create a small range around the single year
+                    year_range = st.slider(
+                        "Publication Year Range",
+                        min_value=min_year - 5,
+                        max_value=max_year + 5,
+                        value=(min_year, max_year)
+                    )
+                else:
+                    year_range = st.slider(
+                        "Publication Year Range",
+                        min_value=min_year,
+                        max_value=max_year,
+                        value=(min_year, max_year)
+                    )
             else:
                 year_range = None
         else:
@@ -68,7 +76,7 @@ def render_report_menu(df: pd.DataFrame) -> Optional[Dict[str, Any]]:
     with col2:
         material_filter = st.multiselect(
             "Material Types",
-            options=sorted(df['material_type'].dropna().unique()) if 'material_type' in df.columns else [],
+            options=sorted(df['Material Type'].dropna().unique()) if 'Material Type' in df.columns else [],
             default=[]
         )
 
@@ -106,14 +114,14 @@ def generate_report(
     # Apply filters
     filtered_df = df.copy()
 
-    if year_range and 'publication_year_start' in filtered_df.columns:
+    if year_range and 'Publication Year Start' in filtered_df.columns:
         filtered_df = filtered_df[
-            (filtered_df['publication_year_start'] >= year_range[0]) &
-            (filtered_df['publication_year_start'] <= year_range[1])
+            (filtered_df['Publication Year Start'] >= year_range[0]) &
+            (filtered_df['Publication Year Start'] <= year_range[1])
         ]
 
-    if material_filter and 'material_type' in filtered_df.columns:
-        filtered_df = filtered_df[filtered_df['material_type'].isin(material_filter)]
+    if material_filter and 'Material Type' in filtered_df.columns:
+        filtered_df = filtered_df[filtered_df['Material Type'].isin(material_filter)]
 
     # Generate report based on type
     if report_type == "Collection Summary Report":
@@ -122,12 +130,8 @@ def generate_report(
         return generate_usage_report(filtered_df)
     elif report_type == "Subject Coverage Report":
         return generate_subject_report(filtered_df)
-    elif report_type == "Retention Status Report":
-        return generate_retention_report(filtered_df)
     elif report_type == "Publication Age Report":
         return generate_age_report(filtered_df)
-    elif report_type == "Custom Report":
-        return generate_custom_report(filtered_df)
 
     return {}
 
@@ -147,45 +151,45 @@ def generate_collection_summary(df: pd.DataFrame) -> Dict[str, Any]:
         'name': 'Collection Overview',
         'metrics': [
             {'label': 'Total Items', 'value': len(df)},
-            {'label': 'Unique Titles', 'value': df['title'].nunique() if 'title' in df.columns else 0},
-            {'label': 'Unique Authors', 'value': df['author'].nunique() if 'author' in df.columns and df['author'].notna().any() else 0},
-            {'label': 'Unique Publishers', 'value': df['publisher'].nunique() if 'publisher' in df.columns and df['publisher'].notna().any() else 0},
+            {'label': 'Unique Titles', 'value': df['Title'].nunique() if 'Title' in df.columns else 0},
+            {'label': 'Unique Authors', 'value': df['Author'].nunique() if 'Author' in df.columns and df['Author'].notna().any() else 0},
+            {'label': 'Unique Publishers', 'value': df['Publisher'].nunique() if 'Publisher' in df.columns and df['Publisher'].notna().any() else 0},
         ]
     }
     report['sections'].append(overview)
 
     # Material types
-    if 'material_type' in df.columns:
+    if 'Material Type' in df.columns:
         material_section = {
             'name': 'Items by Material Type',
             'type': 'table',
-            'data': df['material_type'].value_counts().reset_index()
+            'data': df['Material Type'].value_counts().reset_index()
         }
         material_section['data'].columns = ['Material Type', 'Count']
         report['sections'].append(material_section)
 
     # LC Classes
     if 'call_number_classification' in df.columns:
-        lc_df = df[df['call_number_classification'] == 'LC']
+        lc_df = df[df['call_number_classification'] == 'Library of Congress classification']
         if len(lc_df) > 0:
             lc_section = {
                 'name': 'Items by LC Class',
                 'type': 'table',
-                'data': lc_df['call_number_class'].value_counts().reset_index()
+                'data': lc_df['Permanent LC Classification Top Line'].value_counts().reset_index()
             }
             lc_section['data'].columns = ['LC Class', 'Count']
             report['sections'].append(lc_section)
 
     # Publication years
-    if 'publication_year_start' in df.columns:
-        valid_df = df[df['publication_year_start'].notna()]
+    if 'Publication Year Start' in df.columns:
+        valid_df = df[df['Publication Year Start'].notna()]
         if len(valid_df) > 0:
             year_section = {
                 'name': 'Items by Publication Decade',
                 'type': 'table',
                 'data': valid_df.copy()
             }
-            year_section['data']['decade'] = (year_section['data']['publication_year_start'] // 10) * 10
+            year_section['data']['decade'] = (year_section['data']['Publication Year Start'] // 10) * 10
             year_data = year_section['data'].groupby('decade').size().reset_index()
             year_data.columns = ['Decade', 'Count']
             report['sections'].append({
@@ -206,15 +210,15 @@ def generate_usage_report(df: pd.DataFrame) -> Dict[str, Any]:
         'sections': [],
     }
 
-    if 'num_loans' not in df.columns:
+    if 'Num of Loans Including Pre-Migration (In House + Not In House)' not in df.columns:
         report['error'] = 'No usage data available'
         return report
 
     # Usage overview
-    total_loans = int(df['num_loans'].sum())
-    items_with_loans = len(df[df['num_loans'] > 0])
-    avg_loans = df['num_loans'].mean()
-    max_loans = int(df['num_loans'].max())
+    total_loans = int(df['Num of Loans Including Pre-Migration (In House + Not In House)'].sum())
+    items_with_loans = len(df[df['Num of Loans Including Pre-Migration (In House + Not In House)'] > 0])
+    avg_loans = df['Num of Loans Including Pre-Migration (In House + Not In House)'].mean()
+    max_loans = int(df['Num of Loans Including Pre-Migration (In House + Not In House)'].max())
 
     overview = {
         'name': 'Usage Overview',
@@ -228,8 +232,8 @@ def generate_usage_report(df: pd.DataFrame) -> Dict[str, Any]:
     report['sections'].append(overview)
 
     # Usage by material type
-    if 'material_type' in df.columns:
-        usage_by_material = df.groupby('material_type')['num_loans'].agg(['sum', 'mean', 'count']).reset_index()
+    if 'Material Type' in df.columns:
+        usage_by_material = df.groupby('Material Type')['Num of Loans Including Pre-Migration (In House + Not In House)'].agg(['sum', 'mean', 'count']).reset_index()
         usage_by_material.columns = ['Material Type', 'Total Loans', 'Avg Loans', 'Item Count']
         report['sections'].append({
             'name': 'Usage by Material Type',
@@ -238,18 +242,18 @@ def generate_usage_report(df: pd.DataFrame) -> Dict[str, Any]:
         })
 
     # Most circulated items
-    top_items = df.nlargest(20, 'num_loans')[['title', 'author', 'num_loans', 'permanent_call_number']]
+    top_items = df.nlargest(20, 'Num of Loans Including Pre-Migration (In House + Not In House)')[['Title', 'Author', 'Num of Loans Including Pre-Migration (In House + Not In House)', 'Permanent Call Number']]
     report['sections'].append({
         'name': 'Top 20 Most Circulated Items',
         'type': 'table',
         'data': top_items
     })
 
-    # Usage distribution
-    bins = [0, 1, 5, 10, 25, 50, 100, float('inf')]
-    labels = ['1', '2-5', '6-10', '11-25', '26-50', '51-100', '100+']
+    # Usage distribution - include 0 usage items
+    bins = [-1, 0, 1, 5, 10, 25, 50, 100, float('inf')]
+    labels = ['0', '1', '2-5', '6-10', '11-25', '26-50', '51-100', '100+']
     df_copy = df.copy()
-    df_copy['loan_range'] = pd.cut(df_copy['num_loans'], bins=bins, labels=labels, right=True)
+    df_copy['loan_range'] = pd.cut(df_copy['Num of Loans Including Pre-Migration (In House + Not In House)'], bins=bins, labels=labels, right=True)
     usage_dist = df_copy.groupby('loan_range', observed=True).size().reset_index()
     usage_dist.columns = ['Loan Range', 'Item Count']
 
@@ -273,13 +277,13 @@ def generate_subject_report(df: pd.DataFrame) -> Dict[str, Any]:
         'sections': [],
     }
 
-    if 'subjects' not in df.columns:
+    if 'Subjects' not in df.columns:
         report['error'] = 'No subject data available'
         return report
 
     # Parse all subjects
     all_subjects = {}
-    for subjects_str in df['subjects'].dropna():
+    for subjects_str in df['Subjects'].dropna():
         subjects = parse_subjects(subjects_str)
         for subject in subjects:
             all_subjects[subject] = all_subjects.get(subject, 0) + 1
@@ -289,7 +293,7 @@ def generate_subject_report(df: pd.DataFrame) -> Dict[str, Any]:
         'name': 'Subject Overview',
         'metrics': [
             {'label': 'Total Unique Subjects', 'value': len(all_subjects)},
-            {'label': 'Items with Subjects', 'value': df['subjects'].notna().sum()},
+            {'label': 'Items with Subjects', 'value': df['Subjects'].notna().sum()},
         ]
     }
     report['sections'].append(overview)
@@ -305,95 +309,22 @@ def generate_subject_report(df: pd.DataFrame) -> Dict[str, Any]:
     })
 
     # Subjects by LC class (if available)
-    if 'call_number_class' in df.columns:
-        lc_subjects = df[df['call_number_classification'] == 'LC'].copy()
+    if 'Permanent LC Classification Top Line' in df.columns:
+        lc_subjects = df[df['call_number_classification'] == 'Library of Congress classification'].copy()
         if len(lc_subjects) > 0:
             # Parse subjects for LC items
             lc_subject_counts = {}
             for _, row in lc_subjects.iterrows():
-                if row['subjects']:
-                    subjects = parse_subjects(row['subjects'])
-                    lc_class = row['call_number_class']
+                if row['Subjects']:
+                    subjects = parse_subjects(row['Subjects'])
+                    lc_class = row['Permanent LC Classification Top Line']
                     for subject in subjects:
                         key = f"{lc_class} - {subject}"
                         lc_subject_counts[key] = lc_subject_counts.get(key, 0) + 1
 
-            lc_subject_df = pd.DataFrame(
-                sorted(lc_subject_counts.items(), key=lambda x: -x[1])[:30],
-                columns=['LC Class - Subject', 'Count']
-            )
-
-            report['sections'].append({
-                'name': 'Top Subject-LC Class Combinations',
-                'type': 'table',
-                'data': lc_subject_df
-            })
-
     return report
 
 
-def generate_retention_report(df: pd.DataFrame) -> Dict[str, Any]:
-    """Generate a retention status report."""
-
-    report = {
-        'title': 'Retention Status Report',
-        'generated_at': datetime.now().isoformat(),
-        'sections': [],
-    }
-
-    if 'has_committed_to_retain' not in df.columns:
-        report['error'] = 'No retention data available'
-        return report
-
-    # Retention overview
-    committed = df[df['has_committed_to_retain'] == True]
-    not_committed = df[df['has_committed_to_retain'] != True]
-
-    overview = {
-        'name': 'Retention Overview',
-        'metrics': [
-            {'label': 'Total Items', 'value': len(df)},
-            {'label': 'Committed to Retain', 'value': len(committed)},
-            {'label': 'Not Committed', 'value': len(not_committed)},
-            {'label': 'Retention Rate', 'value': f"{len(committed)/len(df)*100:.1f}%"},
-        ]
-    }
-    report['sections'].append(overview)
-
-    # Committed items by material type
-    if 'material_type' in df.columns:
-        committed_by_material = committed.groupby('material_type').size().reset_index()
-        committed_by_material.columns = ['Material Type', 'Count']
-
-        report['sections'].append({
-            'name': 'Committed Items by Material Type',
-            'type': 'table',
-            'data': committed_by_material.sort_values('Count', ascending=False)
-        })
-
-    # Committed items by LC class
-    if 'call_number_class' in df.columns:
-        committed_lc = committed[committed['call_number_classification'] == 'LC']
-        if len(committed_lc) > 0:
-            committed_by_lc = committed_lc.groupby('call_number_class').size().reset_index()
-            committed_by_lc.columns = ['LC Class', 'Count']
-
-            report['sections'].append({
-                'name': 'Committed Items by LC Class',
-                'type': 'table',
-                'data': committed_by_lc.sort_values('Count', ascending=False)
-            })
-
-    # List of committed items
-    if len(committed) > 0:
-        committed_list = committed[['title', 'author', 'permanent_call_number', 'material_type']].head(100)
-        report['sections'].append({
-            'name': 'Committed Items (Sample)',
-            'type': 'table',
-            'data': committed_list
-        })
-
-    return report
 
 
 def generate_age_report(df: pd.DataFrame) -> Dict[str, Any]:
@@ -408,27 +339,27 @@ def generate_age_report(df: pd.DataFrame) -> Dict[str, Any]:
         'sections': [],
     }
 
-    if 'publication_year_start' not in df.columns:
+    if 'Publication Year Start' not in df.columns:
         report['error'] = 'No publication date data available'
         return report
 
-    valid_df = df[df['publication_year_start'].notna()].copy()
+    valid_df = df[df['Publication Year Start'].notna()].copy()
 
     if len(valid_df) == 0:
         report['error'] = 'No valid publication dates found'
         return report
 
     # Calculate ages
-    valid_df['age'] = current_year - valid_df['publication_year_start']
-    valid_df['decade'] = (valid_df['publication_year_start'] // 10) * 10
+    valid_df['age'] = current_year - valid_df['Publication Year Start']
+    valid_df['decade'] = (valid_df['Publication Year Start'] // 10) * 10
 
     # Age overview
     overview = {
         'name': 'Age Overview',
         'metrics': [
             {'label': 'Items with Publication Dates', 'value': len(valid_df)},
-            {'label': 'Oldest Item', 'value': int(valid_df['publication_year_start'].min())},
-            {'label': 'Newest Item', 'value': int(valid_df['publication_year_start'].max())},
+            {'label': 'Oldest Item', 'value': int(valid_df['Publication Year Start'].min())},
+            {'label': 'Newest Item', 'value': int(valid_df['Publication Year Start'].max())},
             {'label': 'Average Age', 'value': f"{valid_df['age'].mean():.1f} years"},
             {'label': 'Median Age', 'value': f"{int(valid_df['age'].median())} years"},
         ]
@@ -462,116 +393,12 @@ def generate_age_report(df: pd.DataFrame) -> Dict[str, Any]:
     return report
 
 
-def generate_custom_report(df: pd.DataFrame) -> Dict[str, Any]:
-    """Generate a custom report with user-selected fields."""
 
-    # Initialize session state for custom report if not exists
-    if 'custom_report_columns' not in st.session_state:
-        st.session_state.custom_report_columns = []
-    if 'custom_report_sort_column' not in st.session_state:
-        st.session_state.custom_report_sort_column = ''
-    if 'custom_report_sort_ascending' not in st.session_state:
-        st.session_state.custom_report_sort_ascending = True
 
-    report = {
-        'title': 'Custom Report',
-        'generated_at': datetime.now().isoformat(),
-        'sections': [],
-    }
 
-    # Column selection
-    available_columns = [
-        'title', 'author', 'publisher', 'publication_date',
-        'material_type', 'permanent_call_number', 'call_number_class',
-        'num_loans', 'isbn_normalized', 'issn_normalized', 'oclc_control_number',
-        'mms_id', 'barcode', 'subjects', 'has_committed_to_retain',
-        'open_access', 'library_name', 'location_name'
-    ]
 
-    # Filter to available columns
-    available = [col for col in available_columns if col in df.columns]
 
-    # If no columns previously selected, default to first 5
-    if not st.session_state.custom_report_columns and available:
-        st.session_state.custom_report_columns = available[:5]
 
-    selected_columns = st.multiselect(
-        "Select columns to include",
-        options=available,
-        default=st.session_state.custom_report_columns,
-        key="custom_report_columns_select"
-    )
-
-    # Update session state when columns change
-    if selected_columns != st.session_state.custom_report_columns:
-        st.session_state.custom_report_columns = selected_columns
-        # Reset sort column if it's not in the new selection
-        if st.session_state.custom_report_sort_column not in selected_columns:
-            st.session_state.custom_report_sort_column = ''
-
-    if selected_columns:
-        # Sort options
-        sort_column_options = [''] + selected_columns
-        # Ensure current sort column is in options
-        if st.session_state.custom_report_sort_column not in sort_column_options:
-            st.session_state.custom_report_sort_column = ''
-
-        sort_column = st.selectbox(
-            "Sort by",
-            options=sort_column_options,
-            index=sort_column_options.index(st.session_state.custom_report_sort_column) if st.session_state.custom_report_sort_column in sort_column_options else 0,
-            key="custom_report_sort_select"
-        )
-
-        # Update session state when sort column changes
-        if sort_column != st.session_state.custom_report_sort_column:
-            st.session_state.custom_report_sort_column = sort_column
-
-        sort_ascending = st.radio(
-            "Sort order",
-            options=['Ascending', 'Descending'],
-            index=0 if st.session_state.custom_report_sort_ascending else 1,
-            key="custom_report_sort_order_radio"
-        )
-
-        # Update session state when sort order changes
-        if sort_ascending == 'Ascending':
-            st.session_state.custom_report_sort_ascending = True
-        else:
-            st.session_state.custom_report_sort_ascending = False
-
-        if st.button("Generate Custom Report", key="generate_custom_report_button"):
-            custom_df = df[selected_columns].copy()
-
-            if sort_column and sort_column in custom_df.columns:
-                custom_df = custom_df.sort_values(
-                    sort_column,
-                    ascending=st.session_state.custom_report_sort_ascending
-                )
-
-            report['sections'].append({
-                'name': 'Custom Data',
-                'type': 'table',
-                'data': custom_df
-            })
-
-            report['selected_columns'] = selected_columns
-        else:
-            # Show a message prompting the user to click the button
-            report['sections'].append({
-                'name': 'Custom Data',
-                'type': 'info',
-                'data': {'message': 'Please select columns and click the "Generate Custom Report" button to generate the report.'}
-            })
-    else:
-        # Show message when no columns selected
-        report['sections'].append({
-            'name': 'Custom Data',
-            'type': 'info',
-            'data': {'message': 'Please select at least one column to include in the report.'}
-        })
-
-    return report
 
 
 def render_report_display(report: Dict[str, Any]) -> None:
