@@ -30,19 +30,33 @@ from components.export import export_to_csv, export_to_excel, create_summary_rep
 from components.reports import render_report_menu, generate_report, render_report_display
 
 
+@st.cache_data(show_spinner="Loading data from Google Sheet…", ttl=600)
 def load_data_from_google_sheet():
-    """Load data from the public Google Sheet."""
-    url = "https://docs.google.com/spreadsheets/d/1P6ysv95IrKsAbF8m8LIJ8wawCcOQK67x/export?format=csv"
-    try:
-        with st.spinner("Loading data from Google Sheet..."):
+    """Load data from the public Google Sheet (cached)."""
+    # Try multiple URLs that work for public sheets
+    sheet_id = "1R-z7H9ciFaK_sNvTEKbk4S_k-SL7Xogxq2VG8Yo1Fz0"
+    urls = [
+        # Export CSV (first worksheet, gid=0)
+        f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid=0",
+        # Alternative gviz/tq endpoint (requires sheet to be published)
+        f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=Sheet1",
+        # Published CSV export (if sheet published to web)
+        f"https://docs.google.com/spreadsheets/d/{sheet_id}/pub?output=csv",
+    ]
+    last_error = None
+    for url in urls:
+        try:
             # Read the CSV data, ensuring all columns are read as strings to avoid type issues
             raw_df = pd.read_csv(url, dtype=str)
-        # Process the data using the same function used for file uploads
-        processed_df, _ = process_dataframe(raw_df)
-        return processed_df
-    except Exception as e:
-        st.error(f"Failed to load data from Google Sheet: {e}")
-        return pd.DataFrame()
+            # Process the data using the same function used for file uploads
+            processed_df, _ = process_dataframe(raw_df)
+            return processed_df
+        except Exception as e:
+            last_error = e
+            continue
+    # If all URLs failed
+    st.error(f"Failed to load data from Google Sheet: {last_error}")
+    return pd.DataFrame()
 
 
 def initialize_session_state():
@@ -79,13 +93,10 @@ def render_main_dashboard(df: pd.DataFrame):
         st.metric("Total Records", len(df))
 
         if st.button("Refresh Data from Google Sheet", width='stretch'):
-            df_refresh = load_data_from_google_sheet()
-            if not df_refresh.empty:
-                st.session_state.data_df = df_refresh
-                st.success("Data refreshed successfully!")
-                st.rerun()
-            else:
-                st.error("Failed to refresh data.")
+            # Clear cached data to force a fresh fetch
+            load_data_from_google_sheet.clear()
+            st.success("Cache cleared – fetching fresh data...")
+            st.rerun()
 
         if st.button("Clear Data & Start Over", width='stretch'):
             st.session_state.data_loaded = False
@@ -427,21 +438,16 @@ def main():
     render_header()
 
     if not st.session_state.data_loaded:
-        # Show loading screen
-        st.markdown("### Loading Data from Google Sheet")
-        st.markdown("""
-        The Library Dashboard loads data directly from a public Google Sheet.
-        Click the button below to load the latest data.
-        """)
-        if st.button("Load Data from Google Sheet", type="primary"):
+        with st.spinner("Loading data from Google Sheet..."):
             df = load_data_from_google_sheet()
-            if not df.empty:
-                st.session_state.data_loaded = True
-                st.session_state.data_df = df
-                st.success(f"Successfully loaded {len(df)} records from Google Sheet!")
+        if not df.empty:
+            st.session_state.data_loaded = True
+            st.session_state.data_df = df
+            st.rerun()
+        else:
+            st.error("Failed to load data from the public Google Sheet.")
+            if st.button("Retry Loading Data"):
                 st.rerun()
-            else:
-                st.error("Failed to load data. Please check the connection and try again.")
     else:
         # Show main dashboard
         df = st.session_state.data_df
