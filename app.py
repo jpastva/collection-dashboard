@@ -36,7 +36,9 @@ def load_data_from_google_sheet():
     # Try multiple URLs that work for public sheets
     sheet_id = "1R-z7H9ciFaK_sNvTEKbk4S_k-SL7Xogxq2VG8Yo1Fz0"
     urls = [
-        # Export CSV (first worksheet, gid=0)
+        # Export CSV (no gid, defaults to first sheet)
+        f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv",
+        # Export CSV with gid=0 (explicit first sheet)
         f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid=0",
         # Alternative gviz/tq endpoint (requires sheet to be published)
         f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet=Sheet1",
