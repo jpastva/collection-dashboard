@@ -34,7 +34,7 @@ from components.reports import render_report_menu, generate_report, render_repor
 def load_data_from_google_sheet():
     """Load data from the public Google Sheet (cached)."""
     # Try multiple URLs that work for public sheets
-    sheet_id = "1R-z7H9ciFaK_sNvTEKbk4S_k-SL7Xogxq2VG8Yo1Fz0"
+    sheet_id = "1DVrVgMkiXAlg9PdxPKmq3Dw9sHEHWitFb1A-MvpKSIc"
     urls = [
         # Export CSV (no gid, defaults to first sheet)
         f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv",
